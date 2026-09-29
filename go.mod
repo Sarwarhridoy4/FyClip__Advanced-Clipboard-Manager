@@ -4,7 +4,7 @@ go 1.26.1
 
 require (
 	fyne.io/fyne/v2 v2.8.1
-	golang.design/x/clipboard v0.9.0
+	golang.design/x/clipboard v0.10.0
 )
 
 require (
