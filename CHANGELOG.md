@@ -19,6 +19,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - **Quick Paste Keyboard Handling**: Navigation keys no longer fall through to main list when quick paste popup is open
+- **Clipboard Image Limits**: Reject oversized image dimensions before thumbnail generation and preview decoding
+- **Bounded Clipboard Reads**: Limit Linux clipboard subprocess output and reject oversized monitored text, image, and HTML payloads
+- **Backup Validation**: Validate backup versions, checksums, item counts, and item contents before restore
+- **Stored Item Validation**: Validate restored items and stored history records before using or saving them
+- **Update Download Safety**: Restrict release URLs and redirects to approved HTTPS GitHub hosts, cap download and extraction sizes, and reject unsafe archive paths
+- **Update Integrity**: Require and verify the SHA-256 digest published for a release asset before installation
+- **Regex Cache Limits**: Bound regex pattern length and cache growth
+- **Linux Packaging**: Correct hicolor icon paths and install only screenshots that exist in the source tree
+- **Build Version Metadata**: Pass version and build-time values through the correct Go linker variable names
+
+### Security
+- Keep legacy storage encryption keys intact instead of replacing them without re-encrypting the saved history
+- Create update downloads in private temporary directories and extract archives without following unsafe paths
+- Bound reads for history, snippets, backup files, and release metadata
 
 ## [2.3.0] - 2026-07-13
 

@@ -201,18 +201,27 @@ func (m *Monitor) checkClipboard() {
 
 	// Try reading text first
 	if textData := m.native.ReadText(); len(textData) > 0 {
+		if len(textData) > MaxContentSize {
+			return
+		}
 		m.handleText(textData, programmaticHash)
 		return
 	}
 
 	// Try reading image
 	if imageData, imageType := m.native.ReadImage(); len(imageData) > 0 {
+		if len(imageData) > MaxImageSize {
+			return
+		}
 		m.handleImage(imageData, imageType, programmaticHash)
 		return
 	}
 
 	// Try reading HTML
 	if htmlData := m.native.ReadHTML(); len(htmlData) > 0 {
+		if len(htmlData) > MaxContentSize {
+			return
+		}
 		m.handleHTML(htmlData, programmaticHash)
 		return
 	}

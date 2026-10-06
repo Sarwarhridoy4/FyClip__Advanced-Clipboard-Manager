@@ -4,10 +4,11 @@
 # Variables
 APP_NAME := FyClip
 BINARY_NAME := fyclip
-VERSION := $(shell git describe --tags --always --dirty)
+VERSION := $(shell git describe --tags --always --dirty | sed 's/^v//')
 BUILD_TIME := $(shell date -u '+%Y-%m-%d_%H:%M:%S')
-LDFLAGS := -ldflags "-s -w -X main.version=${VERSION} -X main.buildTime=${BUILD_TIME}"
-LDFLAGS_DEBUG := -ldflags "-X main.version=${VERSION} -X main.buildTime=${BUILD_TIME}"
+VERSION_PACKAGE := github.com/Sarwarhridoy4/FyClip---Advanced-Clipboard-Manager/internal/version
+LDFLAGS := -ldflags "-s -w -X main.Version=${VERSION} -X main.BuildTime=${BUILD_TIME} -X ${VERSION_PACKAGE}.Version=${VERSION} -X ${VERSION_PACKAGE}.BuildTime=${BUILD_TIME}"
+LDFLAGS_DEBUG := -ldflags "-X main.Version=${VERSION} -X main.BuildTime=${BUILD_TIME} -X ${VERSION_PACKAGE}.Version=${VERSION} -X ${VERSION_PACKAGE}.BuildTime=${BUILD_TIME}"
 
 # Go parameters
 GO := go

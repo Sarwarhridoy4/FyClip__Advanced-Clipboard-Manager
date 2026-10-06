@@ -104,7 +104,7 @@ install_go() {
     
     log_info "Installing Go..."
     
-    local go_version="1.21.5"
+    local go_version="1.26.1"
     local arch
     arch=$(uname -m)
     case "${arch}" in
@@ -251,6 +251,13 @@ ensure_tools() {
         install_go || { log_error "Failed to install Go"; exit 1; }
     fi
     export PATH="${HOME}/.local/go/bin:${PATH}:$(go env GOPATH 2>/dev/null)/bin"
+    local installed_go min_go
+    installed_go="$(go env GOVERSION | sed 's/^go//')"
+    min_go="1.26.1"
+    if [ "$(printf '%s\n%s\n' "${min_go}" "${installed_go}" | sort -V | head -n 1)" != "${min_go}" ]; then
+        log_error "Go ${min_go} or newer is required by go.mod (found ${installed_go})"
+        exit 1
+    fi
     log_success "Go: $(go version)"
     
     # Check and install fyne
@@ -282,10 +289,12 @@ ensure_tools() {
 
 # Get version
 get_version() {
-    if git rev-parse --git-dir >/dev/null 2>&1; then
-        git describe --tags --abbrev=0 2>/dev/null || echo "1.0.0"
+    local tag
+    tag=$(git describe --tags --abbrev=0 2>/dev/null || true)
+    if [ -n "${tag}" ]; then
+        printf '%s\n' "${tag#v}"
     else
-        echo "1.0.0"
+        printf '%s\n' "2.5.0"
     fi
 }
 
@@ -340,7 +349,7 @@ main() {
     
     # Get version
     if [ -n "${1:-}" ]; then 
-        VERSION="$1"
+        VERSION="${1#v}"
     else
         DEFAULT_VERSION=$(get_version)
         read -r -p "Enter version [${DEFAULT_VERSION}]: " VERSION
@@ -501,10 +510,6 @@ EOF
     # Build the package
     dpkg-deb --build "${DEB_ROOT}" "${DIST_DIR}/${PKG_NAME}_${VERSION}_${ARCH}.deb"
     log_success "Debian package built: ${DIST_DIR}/${PKG_NAME}_${VERSION}_${ARCH}.deb"
-    
-    # Remove previously installed package to avoid conflicts
-    echo "Removing previously installed package..."
-    dpkg -r "${PKG_NAME}" 2>/dev/null || true
     
     # ---------------------------------------------------------------------
     # Build AppImage

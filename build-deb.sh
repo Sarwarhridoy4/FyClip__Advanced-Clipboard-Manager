@@ -21,6 +21,8 @@ AUTHOR="Sarwar Hossain"
 EMAIL="sarwarhridoy4@gmail.com"
 DIST_DIR="dist"
 DEB_BUILD_DIR="${DIST_DIR}/deb-build"
+DEBIAN_REVISION="1"
+DEB_VERSION=""
 
 # Logging functions
 log_info() { echo -e "${BLUE}[INFO]${NC} $1"; }
@@ -30,11 +32,12 @@ log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 
 # Get version from git or use default
 get_version() {
-    if git rev-parse --git-dir >/dev/null 2>&1; then
-        git fetch --tags 2>/dev/null || true
-        git tag --sort=-v:refname | head -1 | sed 's/^v//' || echo "2.5.0"
+    local tag
+    tag=$(git describe --tags --abbrev=0 2>/dev/null || true)
+    if [ -n "${tag}" ]; then
+        printf '%s\n' "${tag#v}"
     else
-        echo "2.5.0"
+        printf '%s\n' "2.5.0"
     fi
 }
 
@@ -54,6 +57,12 @@ check_dependencies() {
     
     if ! command -v dh >/dev/null 2>&1; then
         missing+=("debhelper")
+    fi
+
+    command -v rsync >/dev/null 2>&1 || missing+=("rsync")
+    command -v tar >/dev/null 2>&1 || missing+=("tar")
+    if ! command -v dpkg-deb >/dev/null 2>&1 || ! command -v dpkg-parsechangelog >/dev/null 2>&1; then
+        missing+=("dpkg-dev")
     fi
     
     if [ ${#missing[@]} -gt 0 ]; then
@@ -88,6 +97,21 @@ prepare_source() {
     
     # Copy source files (excluding dist directory to avoid copying into itself)
     rsync -a --exclude='dist' --exclude='.git' --exclude='bin' --exclude='snap' --exclude='.github' . "${DEB_BUILD_DIR}/"
+
+    # Debian takes the package version from debian/changelog.
+    local current_deb_version old_changelog
+    current_deb_version=$(cd "${DEB_BUILD_DIR}" && dpkg-parsechangelog -S Version)
+    if [ "${current_deb_version}" != "${DEB_VERSION}" ]; then
+        old_changelog="${DEB_BUILD_DIR}/debian/changelog.old"
+        mv "${DEB_BUILD_DIR}/debian/changelog" "${old_changelog}"
+        {
+            printf 'fyclip (%s) jammy; urgency=medium\n\n' "${DEB_VERSION}"
+            printf '  * Build FyClip %s.\n\n' "${VERSION}"
+            printf ' -- Sarwar Hossain <sarwarhridoy4@gmail.com>  %s\n\n' "$(date -R)"
+            cat "${old_changelog}"
+        } > "${DEB_BUILD_DIR}/debian/changelog"
+        rm -f "${old_changelog}"
+    fi
     
     # Create tarball
     cd "${DEB_BUILD_DIR}"
@@ -108,9 +132,6 @@ build_deb_package() {
     
     cd - > /dev/null
     
-    # Move .deb file to dist directory
-    mv "${DIST_DIR}/../${PKG_NAME}_${VERSION}"*.deb "${DIST_DIR}/" 2>/dev/null || true
-    
     log_success "Debian package built successfully"
 }
 
@@ -118,7 +139,8 @@ build_deb_package() {
 verify_package() {
     log_info "Verifying package..."
     
-    local deb_file=$(find "${DIST_DIR}" -name "${PKG_NAME}_${VERSION}-*.deb" | head -n 1)
+    local deb_file
+    deb_file=$(find "${DIST_DIR}" -maxdepth 1 -name "${PKG_NAME}_${DEB_VERSION}_*.deb" -print -quit)
     
     if [ -z "${deb_file}" ]; then
         log_error "Package file not found"
@@ -146,10 +168,11 @@ main() {
     
     # Get version
     if [ -n "${1:-}" ]; then
-        VERSION="$1"
+        VERSION="${1#v}"
     else
         VERSION=$(get_version)
     fi
+    DEB_VERSION="${VERSION}-${DEBIAN_REVISION}"
     
     log_info "Building ${APP_NAME} ${VERSION} Debian package"
     
@@ -179,7 +202,7 @@ main() {
     log_success "Debian package is available in ${DIST_DIR}/"
     echo ""
     log_info "To install the package:"
-    log_info "  sudo dpkg -i ${DIST_DIR}/${PKG_NAME}_${VERSION}*.deb"
+    log_info "  sudo dpkg -i ${DIST_DIR}/${PKG_NAME}_${DEB_VERSION}_*.deb"
     log_info "  sudo apt-get install -f  # Fix any dependency issues"
     echo ""
     log_info "To remove the package:"

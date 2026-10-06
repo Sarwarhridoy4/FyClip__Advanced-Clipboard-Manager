@@ -276,6 +276,9 @@ func (m *Manager) ReloadHistory() error {
 
 // AddItem adds a new item to history
 func (m *Manager) AddItem(item Item) AddItemResult {
+	if ValidateItem(&item) != nil {
+		return AddItemResult{}
+	}
 	if item.Content == "" && item.ImageData == "" {
 		return AddItemResult{}
 	}

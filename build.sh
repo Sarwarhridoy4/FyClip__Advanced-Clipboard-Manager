@@ -105,7 +105,7 @@ install_go() {
     
     log_info "Installing Go..."
     
-    local go_version="1.21.5"
+    local go_version="1.26.1"
     local arch
     arch=$(uname -m)
     case "${arch}" in
@@ -252,6 +252,13 @@ ensure_tools() {
         install_go || { log_error "Failed to install Go"; exit 1; }
     fi
     export PATH="${HOME}/.local/go/bin:${PATH}:$(go env GOPATH 2>/dev/null)/bin"
+    local installed_go min_go
+    installed_go="$(go env GOVERSION | sed 's/^go//')"
+    min_go="1.26.1"
+    if [ "$(printf '%s\n%s\n' "${min_go}" "${installed_go}" | sort -V | head -n 1)" != "${min_go}" ]; then
+        log_error "Go ${min_go} or newer is required by go.mod (found ${installed_go})"
+        exit 1
+    fi
     log_success "Go: $(go version)"
     
     # Check and install fyne
@@ -283,10 +290,12 @@ ensure_tools() {
 
 # Get version
 get_version() {
-    if git rev-parse --git-dir >/dev/null 2>&1; then
-        git describe --tags --abbrev=0 2>/dev/null || echo "1.0.0"
+    local tag
+    tag=$(git describe --tags --abbrev=0 2>/dev/null || true)
+    if [ -n "${tag}" ]; then
+        printf '%s\n' "${tag#v}"
     else
-        echo "1.0.0"
+        printf '%s\n' "2.5.0"
     fi
 }
 
@@ -370,7 +379,7 @@ main() {
     
     # Get version
     if [ -n "${1:-}" ]; then 
-        VERSION="$1"
+        VERSION="${1#v}"
     else
         DEFAULT_VERSION=$(get_version)
         read -r -p "Enter version [${DEFAULT_VERSION}]: " VERSION
@@ -550,10 +559,6 @@ EOF
     dpkg-deb --build "${DEB_ROOT}" "${DIST_DIR}/${PKG_NAME}_${VERSION}_${ARCH}.deb"
     log_success "Debian package built: ${DIST_DIR}/${PKG_NAME}_${VERSION}_${ARCH}.deb"
     
-    # Remove previously installed package to avoid conflicts
-    echo "Removing previously installed package..."
-    dpkg -r "${PKG_NAME}" 2>/dev/null || true
-    
     # ---------------------------------------------------------------------
     # Build AppImage
     # ---------------------------------------------------------------------
@@ -634,10 +639,10 @@ EOF
     chmod +x "${TARBALL_ROOT}/${APP_NAME}-${VERSION}-linux-${ARCH}/fix-icons.sh"
     
     # Create README for the tarball
-    cat > "${TARBALL_ROOT}/${APP_NAME}-${VERSION}-linux-${ARCH}/README.md" <<'TARBALL_README'
+    cat > "${TARBALL_ROOT}/${APP_NAME}-${VERSION}-linux-${ARCH}/README.md" <<TARBALL_README
 # FyClip - Advanced Clipboard Manager
 
-A modular, high-performance clipboard manager built with Go and Fyne v2.7+.
+A desktop clipboard manager built with Go and Fyne v2.8.1.
 
 **Current Version**: ${VERSION}
 
@@ -646,7 +651,7 @@ A modular, high-performance clipboard manager built with Go and Fyne v2.7+.
 - 📋 **Clipboard History**: Automatically saves text, images, HTML, and files
 - 📌 **Pin Items**: Keep important items at the top
 - ⭐ **Favorites View**: Toggle pinned-only view instantly
-- 🔍 **Enhanced Search**: Regex, case-sensitive, and fuzzy matching
+- 🔍 **Search**: Filter clipboard history from the search field
 - ❌ **Clear Search**: One-click reset for the search box
 - 🖼️ **Image Support**: Preview and save clipboard images
 - 📝 **HTML Support**: Capture and preserve HTML formatting
@@ -665,7 +670,7 @@ A modular, high-performance clipboard manager built with Go and Fyne v2.7+.
 - 🔒 **Thread-Safe**: Proper concurrency handling
 - 🛡️ **Sensitive Data Detection**: Auto-detect credit cards, SSN, API keys
 - 📦 **Bulk Operations**: Multi-select items for batch delete/pin/unpin
-- 🏷️ **Smart Categories & Tags**: Auto-categorize content (Links, Code, Contacts, etc.)
+- 🗂️ **Automatic Categories**: Group common content types (Links, Code, Contacts, etc.)
 - ⌨️ **Enhanced Keyboard Navigation**: Arrow keys, Enter, Delete, Escape, Space, Home/End, F1
 - ⬆️ **Auto Update**: Check for and install updates from GitHub releases
 - 📦 **Linux Packaging**: Official support for .deb, .AppImage, and tarball
@@ -695,9 +700,9 @@ sudo ./install.sh
 
 - Launch FyClip from your application menu or terminal
 - Use the system tray icon to access clipboard history
-- Press the global hotkey (default: Ctrl+Alt+V) to show the quick paste panel
+- Press F1 while FyClip is focused to open the quick paste panel
 - Right-click on tray icon for settings and options
-- Use search with regex, case-sensitive, or fuzzy matching
+- Search clipboard history from the search field
 - Pin important items to keep them at the top
 - Create snippets for frequently used text templates
 

@@ -2,7 +2,7 @@ Source: fyclip
 Section: utils
 Priority: optional
 Maintainer: Sarwar Hossain <sarwarhridoy4@gmail.com>
-Build-Depends: debhelper-compat (= 13), libgl1-mesa-dev, libxcursor-dev, libxrandr-dev, libxinerama-dev, libxi-dev, libgl-dev, libxxf86vm-dev, libxkbcommon-dev, libwayland-dev, libxkbcommon-x11-dev, libx11-dev, libxext-dev, libxrender-dev, libxfixes-dev, libxss-dev, libxtst-dev, libasound2-dev, libpulse-dev, golang-go (>= 1.21)
+Build-Depends: debhelper-compat (= 13), libgl1-mesa-dev, libxcursor-dev, libxrandr-dev, libxinerama-dev, libxi-dev, libgl-dev, libxxf86vm-dev, libxkbcommon-dev, libwayland-dev, libxkbcommon-x11-dev, libx11-dev, libxext-dev, libxrender-dev, libxfixes-dev, libxss-dev, libxtst-dev, libasound2-dev, libpulse-dev, golang-go (>= 1.26.1)
 Standards-Version: 4.6.2
 Homepage: https://fyclip.vercel.app
 Vcs-Git: https://github.com/Sarwarhridoy4/FyClip---Advanced-Clipboard-Manager.git

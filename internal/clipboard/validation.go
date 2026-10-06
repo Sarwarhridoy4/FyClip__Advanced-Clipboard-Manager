@@ -38,6 +38,9 @@ func ValidateItem(item *Item) error {
 	if item.Type < TypeText || item.Type > TypeFile {
 		return ErrInvalidType
 	}
+	if len(item.Content) > MaxContentSize {
+		return ErrContentTooLarge
+	}
 
 	// Validate content size based on type
 	switch item.Type {

@@ -4,6 +4,7 @@ package clipboard
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -41,7 +42,7 @@ func (sm *SnippetManager) LoadSnippets() error {
 	// Try to load snippets - they may not exist yet
 	// We'll store snippets in a separate file
 	path := filepath.Join(sm.storage.GetDir(), "snippets.json")
-	data, err := os.ReadFile(path)
+	f, err := os.Open(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			// No snippets file yet, start with defaults
@@ -50,7 +51,15 @@ func (sm *SnippetManager) LoadSnippets() error {
 		}
 		return err
 	}
-	
+	defer f.Close()
+	data, err := io.ReadAll(io.LimitReader(f, maxStoredHistoryBytes+1))
+	if err != nil {
+		return fmt.Errorf("failed to read snippets: %w", err)
+	}
+	if len(data) > maxStoredHistoryBytes {
+		return fmt.Errorf("snippet file exceeds size limit")
+	}
+
 	if err := json.Unmarshal(data, &sm.snippets); err != nil {
 		return fmt.Errorf("failed to parse snippets: %w", err)
 	}
@@ -66,11 +75,17 @@ func (sm *SnippetManager) LoadSnippets() error {
 
 func validateSnippets(snippets []Snippet) error {
 	for i, s := range snippets {
+		if i >= maxHistoryItems {
+			return fmt.Errorf("too many snippets")
+		}
 		if s.ID == "" {
 			return fmt.Errorf("snippet %d has empty ID", i)
 		}
 		if s.Title == "" {
 			return fmt.Errorf("snippet %d has empty title", i)
+		}
+		if len(s.Title) > 4096 || len(s.Content) > MaxContentSize || len(s.Abbreviation) > 256 || len(s.Category) > 256 {
+			return fmt.Errorf("snippet %d exceeds field size limits", i)
 		}
 	}
 	return nil
@@ -83,7 +98,7 @@ func (sm *SnippetManager) SaveSnippets() error {
 	if err != nil {
 		return err
 	}
-	
+
 	return os.WriteFile(path, data, 0600)
 }
 
@@ -117,7 +132,7 @@ func (sm *SnippetManager) AddSnippet(snippet Snippet) error {
 	snippet.ID = fmt.Sprintf("%d", time.Now().UnixNano())
 	snippet.CreatedAt = time.Now()
 	snippet.UpdatedAt = time.Now()
-	
+
 	sm.snippets = append(sm.snippets, snippet)
 	return sm.SaveSnippets()
 }
@@ -149,20 +164,20 @@ func (sm *SnippetManager) DeleteSnippet(id string) error {
 // ExpandSnippet expands template variables in snippet content
 func (sm *SnippetManager) ExpandSnippet(content string, clipboardContent string) string {
 	result := content
-	
+
 	// Replace template variables
 	now := time.Now()
-	
+
 	result = strings.ReplaceAll(result, "{{date}}", now.Format("2006-01-02"))
 	result = strings.ReplaceAll(result, "{{time}}", now.Format("15:04:05"))
 	result = strings.ReplaceAll(result, "{{datetime}}", now.Format("2006-01-02 15:04:05"))
 	result = strings.ReplaceAll(result, "{{clipboard}}", clipboardContent)
-	
+
 	// Add more date/time formats
 	result = strings.ReplaceAll(result, "{{year}}", fmt.Sprintf("%d", now.Year()))
 	result = strings.ReplaceAll(result, "{{month}}", now.Format("01"))
 	result = strings.ReplaceAll(result, "{{day}}", now.Format("02"))
-	
+
 	return result
 }
 
@@ -174,12 +189,12 @@ func (sm *SnippetManager) GetCategories() []string {
 			catMap[s.Category] = true
 		}
 	}
-	
+
 	categories := []string{}
 	for cat := range catMap {
 		categories = append(categories, cat)
 	}
-	
+
 	return categories
 }
 

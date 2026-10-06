@@ -23,6 +23,39 @@ type NativeClipboard struct {
 	useWlclip bool
 }
 
+type limitedOutput struct {
+	buf      bytes.Buffer
+	maxBytes int
+	overflow bool
+}
+
+func (w *limitedOutput) Write(p []byte) (int, error) {
+	remaining := w.maxBytes - w.buf.Len()
+	if remaining > 0 {
+		if len(p) > remaining {
+			_, _ = w.buf.Write(p[:remaining])
+		} else {
+			_, _ = w.buf.Write(p)
+		}
+	}
+	if len(p) > remaining {
+		w.overflow = true
+	}
+	return len(p), nil
+}
+
+func runOutputLimited(cmd *exec.Cmd, maxBytes int) ([]byte, error) {
+	out := &limitedOutput{maxBytes: maxBytes}
+	cmd.Stdout = out
+	if err := cmd.Run(); err != nil {
+		return nil, err
+	}
+	if out.overflow {
+		return nil, fmt.Errorf("clipboard data exceeds %d byte limit", maxBytes)
+	}
+	return out.buf.Bytes(), nil
+}
+
 // NewNativeClipboard initializes clipboard support
 func NewNativeClipboard() (*NativeClipboard, error) {
 	nc := &NativeClipboard{
@@ -82,7 +115,13 @@ func (nc *NativeClipboard) ReadText() []byte {
 		return nc.readTextX11()
 	}
 
-	return clipboard.Read(clipboard.FmtText)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	data, err := clipboard.Read(ctx, clipboard.FmtText)
+	if err != nil {
+		return nil
+	}
+	return data
 }
 
 // ReadImage reads image from clipboard
@@ -103,7 +142,12 @@ func (nc *NativeClipboard) ReadImage() ([]byte, string) {
 		return nc.readImageX11()
 	}
 
-	imgData := clipboard.Read(clipboard.FmtImage)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	imgData, err := clipboard.Read(ctx, clipboard.FmtImage)
+	if err != nil {
+		return nil, ""
+	}
 	if len(imgData) > 0 {
 		return imgData, detectImageType(imgData)
 	}
@@ -129,8 +173,10 @@ func (nc *NativeClipboard) WriteText(data []byte) error {
 		return nc.writeTextX11(data)
 	}
 
-	clipboard.Write(clipboard.FmtText, data)
-	return nil
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	_, err := clipboard.Write(ctx, clipboard.FmtText, data)
+	return err
 }
 
 // WriteImage writes image to clipboard
@@ -156,8 +202,10 @@ func (nc *NativeClipboard) WriteImage(base64Data string) error {
 		return nc.writeImageX11(data)
 	}
 
-	clipboard.Write(clipboard.FmtImage, data)
-	return nil
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	_, err = clipboard.Write(ctx, clipboard.FmtImage, data)
+	return err
 }
 
 // ReadHTML reads HTML from clipboard
@@ -178,7 +226,7 @@ func (nc *NativeClipboard) ReadHTML() []byte {
 		defer cancel()
 
 		cmd := exec.CommandContext(ctx, "xclip", "-o", "-selection", "clipboard", "-t", "text/html")
-		out, err := cmd.Output()
+		out, err := runOutputLimited(cmd, MaxContentSize)
 		if err == nil && len(out) > 0 {
 			return out
 		}
@@ -190,7 +238,7 @@ func (nc *NativeClipboard) ReadHTML() []byte {
 		defer cancel()
 
 		cmd := exec.CommandContext(ctx, "wl-paste", "-t", "text/html", "-n")
-		out, err := cmd.Output()
+		out, err := runOutputLimited(cmd, MaxContentSize)
 		if err == nil && len(out) > 0 {
 			return out
 		}
@@ -250,7 +298,7 @@ func (nc *NativeClipboard) ReadFilePaths() []string {
 		defer cancel()
 
 		cmd := exec.CommandContext(ctx, "xclip", "-o", "-selection", "clipboard", "-t", "text/uri-list")
-		out, err := cmd.Output()
+		out, err := runOutputLimited(cmd, MaxContentSize)
 		if err == nil && len(out) > 0 {
 			return parseURIList(SafeString(out))
 		}
@@ -262,7 +310,7 @@ func (nc *NativeClipboard) ReadFilePaths() []string {
 		defer cancel()
 
 		cmd := exec.CommandContext(ctx, "wl-paste", "-t", "text/uri-list", "-n")
-		out, err := cmd.Output()
+		out, err := runOutputLimited(cmd, MaxContentSize)
 		if err == nil && len(out) > 0 {
 			return parseURIList(SafeString(out))
 		}
@@ -329,7 +377,7 @@ func (nc *NativeClipboard) readTextWayland() []byte {
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, "wl-paste", "-n")
-	out, err := cmd.Output()
+	out, err := runOutputLimited(cmd, MaxContentSize)
 	if err != nil {
 		return nil
 	}
@@ -341,7 +389,7 @@ func (nc *NativeClipboard) readImageWayland() ([]byte, string) {
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, "wl-paste", "-t", "image/png", "-n")
-	out, err := cmd.Output()
+	out, err := runOutputLimited(cmd, MaxImageSize)
 	if err == nil && len(out) > 0 {
 		return out, "png"
 	}
@@ -350,7 +398,7 @@ func (nc *NativeClipboard) readImageWayland() ([]byte, string) {
 	defer cancel2()
 
 	cmd2 := exec.CommandContext(ctx2, "wl-paste", "-t", "image/jpeg", "-n")
-	out, err = cmd2.Output()
+	out, err = runOutputLimited(cmd2, MaxImageSize)
 	if err == nil && len(out) > 0 {
 		return out, "jpeg"
 	}
@@ -382,7 +430,7 @@ func (nc *NativeClipboard) readTextX11() []byte {
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, "xclip", "-o", "-selection", "clipboard")
-	out, err := cmd.Output()
+	out, err := runOutputLimited(cmd, MaxContentSize)
 	if err != nil {
 		return nil
 	}
@@ -394,7 +442,7 @@ func (nc *NativeClipboard) readImageX11() ([]byte, string) {
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, "xclip", "-selection", "clipboard", "-t", "image/png", "-o")
-	out, err := cmd.Output()
+	out, err := runOutputLimited(cmd, MaxImageSize)
 	if err == nil && len(out) > 0 {
 		return out, "png"
 	}
@@ -403,7 +451,7 @@ func (nc *NativeClipboard) readImageX11() ([]byte, string) {
 	defer cancel2()
 
 	cmd2 := exec.CommandContext(ctx2, "xclip", "-selection", "clipboard", "-t", "image/jpeg", "-o")
-	out, err = cmd2.Output()
+	out, err = runOutputLimited(cmd2, MaxImageSize)
 	if err == nil && len(out) > 0 {
 		return out, "jpeg"
 	}

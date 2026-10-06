@@ -22,6 +22,9 @@ AUTHOR="Sarwar Hossain"
 EMAIL="sarwarhridoy4@gmail.com"
 DIST_DIR="dist"
 PPA_BUILD_DIR="${DIST_DIR}/ppa-build"
+DEBIAN_REVISION="1"
+DEBIAN_DISTRIBUTION="${DEBIAN_DISTRIBUTION:-jammy}"
+DEB_VERSION=""
 
 # Logging functions
 log_info() { echo -e "${BLUE}[INFO]${NC} $1"; }
@@ -31,11 +34,12 @@ log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 
 # Get version from git or use default
 get_version() {
-    if git rev-parse --git-dir >/dev/null 2>&1; then
-        git fetch --tags 2>/dev/null || true
-        git tag --sort=-v:refname | head -1 | sed 's/^v//' || echo "2.5.0"
+    local tag
+    tag=$(git describe --tags --abbrev=0 2>/dev/null || true)
+    if [ -n "${tag}" ]; then
+        printf '%s\n' "${tag#v}"
     else
-        echo "2.5.0"
+        printf '%s\n' "2.5.0"
     fi
 }
 
@@ -55,6 +59,12 @@ check_dependencies() {
     
     if ! command -v debuild >/dev/null 2>&1; then
         missing+=("devscripts")
+    fi
+
+    command -v rsync >/dev/null 2>&1 || missing+=("rsync")
+    command -v tar >/dev/null 2>&1 || missing+=("tar")
+    if ! command -v dpkg-source >/dev/null 2>&1 || ! command -v dpkg-parsechangelog >/dev/null 2>&1; then
+        missing+=("dpkg-dev")
     fi
     
     if [ ${#missing[@]} -gt 0 ]; then
@@ -89,6 +99,20 @@ prepare_source() {
     
     # Copy source files (excluding dist directory to avoid copying into itself)
     rsync -a --exclude='dist' --exclude='.git' --exclude='bin' --exclude='snap' --exclude='.github' . "${PPA_BUILD_DIR}/"
+
+    local current_deb_version old_changelog
+    current_deb_version=$(cd "${PPA_BUILD_DIR}" && dpkg-parsechangelog -S Version)
+    if [ "${current_deb_version}" != "${DEB_VERSION}" ]; then
+        old_changelog="${PPA_BUILD_DIR}/debian/changelog.old"
+        mv "${PPA_BUILD_DIR}/debian/changelog" "${old_changelog}"
+        {
+            printf 'fyclip (%s) %s; urgency=medium\n\n' "${DEB_VERSION}" "${DEBIAN_DISTRIBUTION}"
+            printf '  * Prepare FyClip %s for PPA upload.\n\n' "${VERSION}"
+            printf ' -- Sarwar Hossain <sarwarhridoy4@gmail.com>  %s\n\n' "$(date -R)"
+            cat "${old_changelog}"
+        } > "${PPA_BUILD_DIR}/debian/changelog"
+        rm -f "${old_changelog}"
+    fi
     
     # Create orig tarball
     cd "${PPA_BUILD_DIR}"
@@ -116,8 +140,9 @@ build_ppa_package() {
 verify_package() {
     log_info "Verifying package..."
     
-    local dsc_file=$(find "${DIST_DIR}" -name "${PKG_NAME}_${VERSION}*.dsc" | head -n 1)
-    local changes_file=$(find "${DIST_DIR}" -name "${PKG_NAME}_${VERSION}*.changes" | head -n 1)
+    local dsc_file changes_file
+    dsc_file=$(find "${DIST_DIR}" -maxdepth 1 -name "${PKG_NAME}_${DEB_VERSION}*.dsc" -print -quit)
+    changes_file=$(find "${DIST_DIR}" -maxdepth 1 -name "${PKG_NAME}_${DEB_VERSION}*.changes" -print -quit)
     
     if [ -z "${dsc_file}" ]; then
         log_error "DSC file not found"
@@ -151,7 +176,7 @@ show_upload_instructions() {
     echo "     https://launchpad.net/~YOUR_USERNAME"
     echo ""
     echo "  2. Upload the package:"
-    echo "     dput ppa:YOUR_USERNAME/fyclip ${DIST_DIR}/${PKG_NAME}_${VERSION}_source.changes"
+    echo "     dput ppa:YOUR_USERNAME/fyclip ${DIST_DIR}/${PKG_NAME}_${DEB_VERSION}_source.changes"
     echo ""
     echo "  3. Wait for build to complete on Launchpad"
     echo ""
@@ -172,10 +197,11 @@ main() {
     
     # Get version
     if [ -n "${1:-}" ]; then
-        VERSION="$1"
+        VERSION="${1#v}"
     else
         VERSION=$(get_version)
     fi
+    DEB_VERSION="${VERSION}-${DEBIAN_REVISION}"
     
     log_info "Building ${APP_NAME} ${VERSION} PPA package"
     

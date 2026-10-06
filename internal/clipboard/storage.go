@@ -23,6 +23,8 @@ import (
 
 const historyFileName = "clipboard_history.json"
 const encryptionKeyFileName = "encryption.key" // New constant
+const maxStoredHistoryBytes = 256 << 20
+const maxHistoryItems = 100000
 
 // PBKDF2 parameters for secure key derivation
 const (
@@ -142,47 +144,8 @@ func loadOrCreateKey(keyPath string) ([]byte, error) {
 			return nil, fmt.Errorf("invalid encryption key length: %d bytes, expected 32", len(key))
 		}
 
-		// Migrate to new format in background (don't block startup)
-		go func() {
-			if migrateErr := migrateToSecureKey(keyPath, key); migrateErr != nil {
-				// Log error but don't fail - old format still works
-				fmt.Fprintf(os.Stderr, "Warning: failed to migrate encryption key: %v\n", migrateErr)
-			}
-		}()
-
 		return key, nil
 	}
-}
-
-// migrateToSecureKey migrates an old hex-encoded key to the new PBKDF2 format
-func migrateToSecureKey(keyPath string, _ []byte) error {
-	saltPath := keyPath + ".salt"
-
-	// Generate new salt
-	salt := make([]byte, saltLen)
-	if _, err := io.ReadFull(rand.Reader, salt); err != nil {
-		return fmt.Errorf("failed to generate migration salt: %w", err)
-	}
-
-	// Generate new system entropy (pseudo-password)
-	systemEntropy := make([]byte, 32)
-	if _, err := io.ReadFull(rand.Reader, systemEntropy); err != nil {
-		return fmt.Errorf("failed to generate migration entropy: %w", err)
-	}
-
-	// Derive new key using PBKDF2
-	newKey := deriveKeyFromPassword(systemEntropy, salt)
-
-	// Save salt and new key
-	if err := os.WriteFile(saltPath, salt, 0600); err != nil {
-		return fmt.Errorf("failed to save migration salt: %w", err)
-	}
-
-	if err := os.WriteFile(keyPath, newKey, 0600); err != nil {
-		return fmt.Errorf("failed to save migrated key: %w", err)
-	}
-
-	return nil
 }
 
 // Load reads clipboard history from disk
@@ -190,12 +153,20 @@ func (s *Storage) Load() ([]Item, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	encryptedData, err := os.ReadFile(s.filePath)
+	f, err := os.Open(s.filePath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return []Item{}, nil
 		}
 		return nil, fmt.Errorf("failed to read history file: %w", err)
+	}
+	defer f.Close()
+	encryptedData, err := io.ReadAll(io.LimitReader(f, maxStoredHistoryBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("failed to read history file: %w", err)
+	}
+	if len(encryptedData) > maxStoredHistoryBytes {
+		return nil, fmt.Errorf("history file exceeds size limit")
 	}
 
 	// Decrypt data
@@ -209,6 +180,9 @@ func (s *Storage) Load() ([]Item, error) {
 	if err != nil {
 		// If decompression fails, try using the data as-is (for backward compatibility)
 		decompressedData = decryptedData
+	}
+	if len(decompressedData) > maxStoredHistoryBytes {
+		return nil, fmt.Errorf("decompressed history exceeds size limit")
 	}
 
 	if len(decompressedData) == 0 {
@@ -238,12 +212,18 @@ func (s *Storage) Load() ([]Item, error) {
 }
 
 func validateItems(items []Item) error {
+	if len(items) > maxHistoryItems {
+		return fmt.Errorf("history contains too many items")
+	}
 	for i, item := range items {
 		if item.ID == "" {
 			return fmt.Errorf("item %d has empty ID", i)
 		}
 		if item.Type < TypeText || item.Type > TypeFile {
 			return fmt.Errorf("item %d has invalid type: %d", i, item.Type)
+		}
+		if err := ValidateItem(&item); err != nil {
+			return fmt.Errorf("item %d: %w", i, err)
 		}
 	}
 	return nil
@@ -253,6 +233,9 @@ func validateItems(items []Item) error {
 func (s *Storage) Save(items []Item) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := validateItems(items); err != nil {
+		return fmt.Errorf("refusing to save invalid history: %w", err)
+	}
 
 	jsonData, err := json.Marshal(items)
 	if err != nil {
@@ -409,5 +392,5 @@ func decompress(data []byte) ([]byte, error) {
 	}
 	defer reader.Close()
 
-	return io.ReadAll(reader)
+	return io.ReadAll(io.LimitReader(reader, maxStoredHistoryBytes+1))
 }

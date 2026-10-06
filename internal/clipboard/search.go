@@ -85,6 +85,9 @@ func searchWithSubstring(content, query string, caseSensitive bool) bool {
 
 // searchWithRegex performs regex-based search
 func searchWithRegex(content, pattern string) bool {
+	if len(pattern) > 1000 {
+		return strings.Contains(content, pattern)
+	}
 	regexCacheMu.Lock()
 	defer regexCacheMu.Unlock()
 
@@ -99,6 +102,9 @@ func searchWithRegex(content, pattern string) bool {
 		if err != nil {
 			// If regex is invalid, fall back to substring search
 			return strings.Contains(content, pattern)
+		}
+		if len(regexCache) >= 128 {
+			regexCache = make(map[string]*regexp.Regexp)
 		}
 		regexCache[pattern] = re
 	}

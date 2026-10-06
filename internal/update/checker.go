@@ -2,8 +2,10 @@
 package update
 
 import (
+	"archive/zip"
 	"context"
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -37,6 +39,7 @@ type GitHubAsset struct {
 	Size        int64  `json:"size"`
 	DownloadURL string `json:"browser_download_url"`
 	ContentType string `json:"content_type"`
+	Digest      string `json:"digest"`
 }
 
 type assetCandidate struct {
@@ -118,12 +121,8 @@ func validateCommandExists(cmd string) error {
 	if err != nil {
 		return fmt.Errorf("failed to resolve command path: %w", err)
 	}
-	absTemp, err := filepath.Abs(os.TempDir())
-	if err != nil {
-		return fmt.Errorf("failed to resolve temp directory: %w", err)
-	}
-	if !strings.HasPrefix(absPath, absTemp+string(filepath.Separator)) && absPath != absTemp {
-		return fmt.Errorf("command path is outside temp directory: %s", absPath)
+	if info, err := os.Stat(absPath); err != nil || info.IsDir() {
+		return fmt.Errorf("command is not an executable file: %s", absPath)
 	}
 	return nil
 }
@@ -348,9 +347,12 @@ func (c *Checker) CheckForUpdate(ctx context.Context) (*UpdateInfo, error) {
 		return nil, fmt.Errorf("GitHub API returned status %d", resp.StatusCode)
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, (2<<20)+1))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+	if len(body) > 2<<20 {
+		return nil, fmt.Errorf("GitHub release response exceeds size limit")
 	}
 
 	var release GitHubRelease
@@ -375,6 +377,7 @@ func (c *Checker) CheckForUpdate(ctx context.Context) (*UpdateInfo, error) {
 		AssetName:      asset.Name,
 		AssetSize:      asset.Size,
 		IsPrerelease:   release.Prerelease,
+		ExpectedHash:   strings.TrimPrefix(asset.Digest, "sha256:"),
 	}
 
 	c.log.Info(fmt.Sprintf("Current version: %s, Latest version: %s", c.currentVersion, updateInfo.LatestVersion))
@@ -616,28 +619,47 @@ type Downloader struct {
 	checker      *Checker
 	updateInfo   *UpdateInfo
 	downloadPath string
+	downloadDir  string
 	log          *logger.Logger
 }
 
 // NewDownloader creates a new downloader
 func NewDownloader(checker *Checker, updateInfo *UpdateInfo) (*Downloader, error) {
+	if checker == nil || updateInfo == nil {
+		return nil, fmt.Errorf("checker and update info are required")
+	}
 	if err := validateAssetName(updateInfo.AssetName); err != nil {
 		return nil, fmt.Errorf("invalid asset name: %w", err)
 	}
-	downloadPath := filepath.Join(os.TempDir(), updateInfo.AssetName)
+	u, err := url.Parse(updateInfo.DownloadURL)
+	if err != nil || u.Scheme != "https" || !strings.EqualFold(u.Hostname(), "github.com") || u.User != nil {
+		return nil, fmt.Errorf("download URL must be an HTTPS GitHub URL")
+	}
+	downloadDir, err := os.MkdirTemp("", "fyclip-update-*")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create private download directory: %w", err)
+	}
+	downloadPath := filepath.Join(downloadDir, updateInfo.AssetName)
 	if err := validatePathInTemp(downloadPath); err != nil {
+		_ = os.RemoveAll(downloadDir)
 		return nil, fmt.Errorf("invalid download path: %w", err)
 	}
 	return &Downloader{
 		checker:      checker,
 		updateInfo:   updateInfo,
 		downloadPath: downloadPath,
+		downloadDir:  downloadDir,
 		log:          logger.Get(),
 	}, nil
 }
 
 // Download downloads the update asset
-func (d *Downloader) Download(ctx context.Context, progressFunc func(downloaded, total int64)) error {
+func (d *Downloader) Download(ctx context.Context, progressFunc func(downloaded, total int64)) (retErr error) {
+	defer func() {
+		if retErr != nil {
+			_ = os.RemoveAll(d.downloadDir)
+		}
+	}()
 	d.log.Info(fmt.Sprintf("Downloading %s...", d.updateInfo.AssetName))
 
 	req, err := http.NewRequestWithContext(ctx, "GET", d.updateInfo.DownloadURL, nil)
@@ -656,6 +678,10 @@ func (d *Downloader) Download(ctx context.Context, progressFunc func(downloaded,
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("download returned status %d", resp.StatusCode)
 	}
+	finalURL := resp.Request.URL
+	if finalURL == nil || finalURL.Scheme != "https" || !allowedAssetHost(finalURL.Hostname()) {
+		return fmt.Errorf("download redirected to an untrusted URL")
+	}
 
 	totalSize := resp.ContentLength
 	if totalSize <= 0 {
@@ -663,7 +689,7 @@ func (d *Downloader) Download(ctx context.Context, progressFunc func(downloaded,
 	}
 
 	// Create file
-	file, err := os.Create(d.downloadPath)
+	file, err := os.OpenFile(d.downloadPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
 	if err != nil {
 		return fmt.Errorf("failed to create file: %w", err)
 	}
@@ -681,6 +707,12 @@ func (d *Downloader) Download(ctx context.Context, progressFunc func(downloaded,
 
 		n, err := resp.Body.Read(buf)
 		if n > 0 {
+			if d.updateInfo.AssetSize > 0 && downloaded+int64(n) > d.updateInfo.AssetSize {
+				return fmt.Errorf("download exceeds declared asset size")
+			}
+			if downloaded+int64(n) > 1<<30 {
+				return fmt.Errorf("download exceeds 1 GiB limit")
+			}
 			_, writeErr := file.Write(buf[:n])
 			if writeErr != nil {
 				return fmt.Errorf("failed to write: %w", writeErr)
@@ -698,15 +730,30 @@ func (d *Downloader) Download(ctx context.Context, progressFunc func(downloaded,
 			return fmt.Errorf("read error: %w", err)
 		}
 	}
+	if err := d.Verify(); err != nil {
+		return err
+	}
 
 	d.log.Info("Download complete")
 	return nil
+}
+
+func allowedAssetHost(host string) bool {
+	switch strings.ToLower(host) {
+	case "github.com", "release-assets.githubusercontent.com", "objects.githubusercontent.com":
+		return true
+	default:
+		return false
+	}
 }
 
 // GetDownloadPath returns the path to the downloaded file
 func (d *Downloader) GetDownloadPath() string {
 	return d.downloadPath
 }
+
+// ExpectedHash returns the SHA-256 digest advertised by GitHub for this asset.
+func (d *Downloader) ExpectedHash() string { return d.updateInfo.ExpectedHash }
 
 // Verify verifies the downloaded file integrity
 func (d *Downloader) Verify() error {
@@ -721,14 +768,16 @@ func (d *Downloader) Verify() error {
 
 	d.log.Info(fmt.Sprintf("Downloaded file SHA-256: %s", hash))
 
-	if d.updateInfo.ExpectedHash != "" {
-		if hash != d.updateInfo.ExpectedHash {
-			return fmt.Errorf("hash mismatch: expected %s, got %s", d.updateInfo.ExpectedHash, hash)
-		}
-		d.log.Info("Hash verification passed")
-	} else {
-		d.log.Info("Warning: no expected hash provided, skipping verification")
+	if len(d.updateInfo.ExpectedHash) != sha256.Size*2 {
+		return fmt.Errorf("release does not provide a trusted SHA-256 digest; refusing to install")
 	}
+	if _, err := hex.DecodeString(d.updateInfo.ExpectedHash); err != nil {
+		return fmt.Errorf("invalid expected SHA-256 digest")
+	}
+	if !strings.EqualFold(hash, d.updateInfo.ExpectedHash) {
+		return fmt.Errorf("downloaded asset SHA-256 does not match release digest")
+	}
+	d.log.Info("Hash verification passed")
 
 	return nil
 }
@@ -737,17 +786,22 @@ func (d *Downloader) Verify() error {
 type Installer struct {
 	downloadPath string
 	appName      string
+	expectedHash string
 	log          *logger.Logger
 	output       strings.Builder
 }
 
 // NewInstaller creates a new installer
-func NewInstaller(downloadPath, appName string) *Installer {
-	return &Installer{
+func NewInstaller(downloadPath, appName string, expectedHash ...string) *Installer {
+	i := &Installer{
 		downloadPath: downloadPath,
 		appName:      appName,
 		log:          logger.Get(),
 	}
+	if len(expectedHash) > 0 {
+		i.expectedHash = expectedHash[0]
+	}
+	return i
 }
 
 // GetOutput returns the captured installation output
@@ -769,6 +823,9 @@ func (i *Installer) Install() error {
 		return fmt.Errorf("failed to verify download: %w", err)
 	}
 	i.log.Info(fmt.Sprintf("Downloaded file SHA-256: %s", hash))
+	if len(i.expectedHash) != sha256.Size*2 || !strings.EqualFold(hash, i.expectedHash) {
+		return fmt.Errorf("downloaded asset does not match the trusted release SHA-256 digest")
+	}
 
 	i.log.Info(fmt.Sprintf("Installing %s...", filename))
 
@@ -965,29 +1022,16 @@ func (i *Installer) installDmg() error {
 
 // installZip extracts and installs from ZIP
 func (i *Installer) installZip() error {
-	// Extract to temp
-	tmpDir := filepath.Join(os.TempDir(), "fyclip-update")
-	if err := validatePathInTemp(tmpDir); err != nil {
-		return fmt.Errorf("invalid temp directory: %w", err)
-	}
-	os.MkdirAll(tmpDir, 0755)
-
 	if err := validatePathInTemp(i.downloadPath); err != nil {
 		return fmt.Errorf("invalid download path: %w", err)
 	}
-	if err := validateCommandExists("unzip"); err != nil {
-		return err
+	tmpDir, err := os.MkdirTemp("", "fyclip-extract-*")
+	if err != nil {
+		return fmt.Errorf("failed to create extraction directory: %w", err)
 	}
-	if err := validateCommandExists("cp"); err != nil {
+	defer os.RemoveAll(tmpDir)
+	if err := extractZipSafely(i.downloadPath, tmpDir); err != nil {
 		return err
-	}
-
-	cmd := exec.Command("unzip", "-o", i.downloadPath, "-d", tmpDir)
-	cmd.Stdout = &i.output
-	cmd.Stderr = &i.output
-	if err := cmd.Run(); err != nil {
-		i.output.WriteString(fmt.Sprintf("Failed to extract: %v\n", err))
-		return fmt.Errorf("failed to extract: %w", err)
 	}
 
 	// Find .app
@@ -1017,9 +1061,68 @@ func (i *Installer) installZip() error {
 		i.output.WriteString("Application installed to /Applications/\n")
 	}
 
-	// Cleanup
-	os.RemoveAll(tmpDir)
+	return nil
+}
 
+func extractZipSafely(archivePath, destination string) error {
+	r, err := zip.OpenReader(archivePath)
+	if err != nil {
+		return fmt.Errorf("failed to open update archive: %w", err)
+	}
+	defer r.Close()
+	root, err := filepath.Abs(destination)
+	if err != nil {
+		return err
+	}
+	var total uint64
+	for _, f := range r.File {
+		if f.FileInfo().Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("update archive contains a symbolic link")
+		}
+		entry := filepath.Clean(filepath.FromSlash(f.Name))
+		if filepath.IsAbs(entry) || filepath.VolumeName(entry) != "" {
+			return fmt.Errorf("update archive contains an absolute path")
+		}
+		target := filepath.Join(root, entry)
+		relative, err := filepath.Rel(root, target)
+		if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) || filepath.IsAbs(relative) {
+			return fmt.Errorf("update archive contains an unsafe path")
+		}
+		if f.UncompressedSize64 > (1<<30)-total {
+			return fmt.Errorf("update archive exceeds 1 GiB expanded limit")
+		}
+		total += f.UncompressedSize64
+		if f.FileInfo().IsDir() {
+			if err := os.MkdirAll(target, 0700); err != nil {
+				return err
+			}
+			continue
+		}
+		if err := os.MkdirAll(filepath.Dir(target), 0700); err != nil {
+			return err
+		}
+		src, err := f.Open()
+		if err != nil {
+			return err
+		}
+		out, err := os.OpenFile(target, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+		if err != nil {
+			src.Close()
+			return err
+		}
+		_, copyErr := io.CopyN(out, src, int64(f.UncompressedSize64))
+		closeErr := out.Close()
+		srcErr := src.Close()
+		if copyErr != nil {
+			return copyErr
+		}
+		if closeErr != nil {
+			return closeErr
+		}
+		if srcErr != nil {
+			return srcErr
+		}
+	}
 	return nil
 }
 
@@ -1080,9 +1183,12 @@ func (a *AutoUpdater) CheckAndInstall(ctx context.Context, appName string) error
 	}
 
 	// Install the update
-	installer := NewInstaller(downloader.GetDownloadPath(), appName)
+	installer := NewInstaller(downloader.GetDownloadPath(), appName, downloader.updateInfo.ExpectedHash)
 	if err := installer.Install(); err != nil {
 		return err
+	}
+	if !strings.EqualFold(filepath.Ext(downloader.GetDownloadPath()), ".AppImage") {
+		_ = os.RemoveAll(downloader.downloadDir)
 	}
 
 	a.log.Info("Update installed successfully")

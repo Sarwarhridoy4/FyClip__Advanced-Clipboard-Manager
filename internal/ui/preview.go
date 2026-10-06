@@ -1,13 +1,9 @@
 package ui
 
 import (
-	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"image"
-	_ "image/jpeg"
-	_ "image/png"
 	"strings"
 
 	"fyne.io/fyne/v2"
@@ -68,11 +64,11 @@ type PreviewPane struct {
 	lastItemID   string
 	lastItemType clipboard.ItemType
 	hasSelection bool
-	
+
 	// Cache for image data to avoid repeated decoding
-	cachedImageData string
+	cachedImageData     string
 	cachedImageResource fyne.Resource
-	
+
 	// Cache for markdown content to avoid repeated parsing
 	cachedMarkdown string
 }
@@ -88,7 +84,7 @@ func NewPreviewPane(manager *clipboard.Manager) *PreviewPane {
 
 	pp.scroll = container.NewVScroll(pp.text)
 	pp.scroll.Hide()
-	
+
 	// Label for plain text display (used for HTML)
 	pp.label = widget.NewLabel("")
 	pp.label.Wrapping = fyne.TextWrapWord
@@ -188,7 +184,6 @@ func (pp *PreviewPane) showText(item clipboard.Item) {
 	pp.markRendered(item)
 }
 
-
 // showCode renders HTML content as code block
 func (pp *PreviewPane) showCode(item clipboard.Item) {
 	pp.image.Hide()
@@ -255,25 +250,25 @@ func isJSON(s string) bool {
 // detectCodeLanguage attempts to detect the programming language from content
 func detectCodeLanguage(content string) string {
 	content = strings.TrimSpace(content)
-	
+
 	// Check for JSON
 	if isJSON(content) {
 		return "json"
 	}
-	
+
 	// Check for common patterns
 	lowerContent := strings.ToLower(content)
-	
+
 	// Go
 	if strings.Contains(content, "package ") && strings.Contains(content, "func ") {
 		return "go"
 	}
-	
+
 	// Python
 	if strings.Contains(content, "def ") && strings.Contains(content, ":") && !strings.Contains(content, "{") {
 		return "python"
 	}
-	
+
 	// JavaScript/TypeScript
 	if strings.Contains(content, "const ") || strings.Contains(content, "let ") || strings.Contains(content, "function ") {
 		if strings.Contains(content, ": string") || strings.Contains(content, ": number") || strings.Contains(content, "interface ") {
@@ -281,54 +276,54 @@ func detectCodeLanguage(content string) string {
 		}
 		return "javascript"
 	}
-	
+
 	// Java
 	if strings.Contains(content, "public class ") || strings.Contains(content, "private ") {
 		return "java"
 	}
-	
+
 	// C/C++
 	if strings.Contains(content, "#include<") || strings.Contains(content, "#include ") {
 		return "cpp"
 	}
-	
+
 	// Rust
 	if strings.Contains(content, "fn main()") || strings.Contains(content, "let mut ") {
 		return "rust"
 	}
-	
+
 	// HTML
 	if strings.Contains(content, "<html") || strings.Contains(content, "<!DOCTYPE") || strings.Contains(content, "<div") {
 		return "html"
 	}
-	
+
 	// CSS
 	if strings.Contains(content, "{") && (strings.Contains(lowerContent, "color:") || strings.Contains(lowerContent, "margin:") || strings.Contains(lowerContent, "padding:")) {
 		return "css"
 	}
-	
+
 	// SQL
 	if strings.Contains(lowerContent, "select ") || strings.Contains(lowerContent, "insert ") || strings.Contains(lowerContent, "update ") || strings.Contains(lowerContent, "create table") {
 		return "sql"
 	}
-	
+
 	// Bash/Shell
 	if strings.HasPrefix(content, "#!") || strings.Contains(content, "#!/bin/bash") || strings.Contains(content, "#!/bin/sh") {
 		return "bash"
 	}
-	
+
 	// YAML
 	if strings.Contains(content, "---") || (strings.Contains(content, ":") && !strings.Contains(content, "{") && !strings.Contains(content, ";")) {
 		if strings.Contains(content, "  - ") {
 			return "yaml"
 		}
 	}
-	
+
 	// Markdown
 	if strings.Contains(content, "```") || strings.Contains(content, "[**") {
 		return "markdown"
 	}
-	
+
 	return ""
 }
 
@@ -338,9 +333,9 @@ func isCodeContent(content string) bool {
 	if isJSON(content) {
 		return true
 	}
-	
+
 	content = strings.TrimSpace(content)
-	
+
 	// Check for common code patterns
 	codeIndicators := []string{
 		"func ",
@@ -360,13 +355,13 @@ func isCodeContent(content string) bool {
 		"from ",
 		"where ",
 	}
-	
+
 	for _, indicator := range codeIndicators {
 		if strings.Contains(content, indicator) {
 			return true
 		}
 	}
-	
+
 	// Check for multiple semicolons on single line (common in code)
 	lines := strings.Split(content, "\n")
 	for _, line := range lines {
@@ -382,7 +377,7 @@ func isCodeContent(content string) bool {
 			return true
 		}
 	}
-	
+
 	return false
 }
 
@@ -428,7 +423,7 @@ func (pp *PreviewPane) showImage(item clipboard.Item) {
 		return
 	}
 
-	_, format, err := image.DecodeConfig(bytes.NewReader(imageBytes))
+	format, err := clipboard.ValidateImage(imageBytes)
 	if err != nil {
 		pp.showImageError(item, "Invalid image format")
 		return
@@ -502,7 +497,7 @@ func (pp *PreviewPane) showPlaceholder() {
 func (pp *PreviewPane) setMarkdown(markdown string) {
 	normalized := strings.ReplaceAll(markdown, "\r\n", "\n")
 	normalized = strings.ReplaceAll(normalized, "\r", "\n")
-	
+
 	// Force update - don't use cache for HTML content
 	pp.text.Segments = nil
 	pp.text.ParseMarkdown(normalized)

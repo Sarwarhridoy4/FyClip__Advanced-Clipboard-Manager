@@ -85,9 +85,17 @@ func (bm *BackupManager) ExportBackup(path string, password string) error {
 // ImportBackup restores clipboard history from a backup file
 func (bm *BackupManager) ImportBackup(path string, password string, merge bool) error {
 	// Read backup file
-	data, err := os.ReadFile(path)
+	f, err := os.Open(path)
 	if err != nil {
 		return fmt.Errorf("failed to read backup file: %w", err)
+	}
+	defer f.Close()
+	data, err := io.ReadAll(io.LimitReader(f, maxStoredHistoryBytes+1))
+	if err != nil {
+		return fmt.Errorf("failed to read backup file: %w", err)
+	}
+	if len(data) > maxStoredHistoryBytes {
+		return fmt.Errorf("backup file exceeds size limit")
 	}
 
 	var backupData []byte
@@ -250,6 +258,21 @@ func validateBackup(backup *Backup) error {
 	if backup.Checksum == "" {
 		return fmt.Errorf("backup checksum is empty")
 	}
+	if backup.Version != "1.0" {
+		return fmt.Errorf("unsupported backup version: %s", backup.Version)
+	}
+	if len(backup.Items) > maxHistoryItems {
+		return fmt.Errorf("backup contains too many items")
+	}
+	if len(backup.Checksum) != sha256.Size*2 {
+		return fmt.Errorf("backup checksum has invalid length")
+	}
+	if _, err := hex.DecodeString(backup.Checksum); err != nil {
+		return fmt.Errorf("backup checksum is malformed")
+	}
+	if err := validateItems(backup.Items); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -257,9 +280,17 @@ func validateBackup(backup *Backup) error {
 func (bm *BackupManager) GetBackupInfo(path string) (Backup, error) {
 	var backup Backup
 
-	data, err := os.ReadFile(path)
+	f, err := os.Open(path)
 	if err != nil {
 		return backup, err
+	}
+	defer f.Close()
+	data, err := io.ReadAll(io.LimitReader(f, maxStoredHistoryBytes+1))
+	if err != nil {
+		return backup, err
+	}
+	if len(data) > maxStoredHistoryBytes {
+		return backup, fmt.Errorf("backup file exceeds size limit")
 	}
 
 	// Try to parse as JSON (without password)

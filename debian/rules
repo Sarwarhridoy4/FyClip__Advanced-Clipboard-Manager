@@ -5,7 +5,7 @@
 
 override_dh_auto_build:
 	# Build the Go binary
-	go build -o fyclip -ldflags "-s -w -X main.version=$(shell dpkg-parsechangelog -S Version | sed 's/-.*//')" .
+	go build -o fyclip -ldflags "-s -w -X main.Version=$(shell dpkg-parsechangelog -S Version | sed 's/-.*//') -X main.BuildTime=$(shell date -u '+%Y-%m-%d %H:%M:%S UTC') -X github.com/Sarwarhridoy4/FyClip---Advanced-Clipboard-Manager/internal/version.Version=$(shell dpkg-parsechangelog -S Version | sed 's/-.*//') -X github.com/Sarwarhridoy4/FyClip---Advanced-Clipboard-Manager/internal/version.BuildTime=$(shell date -u '+%Y-%m-%d %H:%M:%S UTC')" .
 
 override_dh_auto_install:
 	# Create directory structure
@@ -25,20 +25,18 @@ override_dh_auto_install:
 	# Install icon at all standard hicolor sizes, properly resized so each
 	# file matches its directory name (fixes blurry/scaled icon issues).
 	for s in 16 24 32 48 64 128 256; do \
-		install -d $(CURDIR)/debian/fyclip/usr/share/icons/hicolor/$$s x$$s/apps; \
+		install -d $(CURDIR)/debian/fyclip/usr/share/icons/hicolor/$${s}x$${s}/apps; \
 		if command -v python3 >/dev/null 2>&1 && python3 -c "import PIL" >/dev/null 2>&1; then \
-			python3 -c "from PIL import Image; img=Image.open('icon.png').convert('RGBA').resize(($$s,$$s), getattr(Image, 'Resampling', Image).LANCZOS).save('$(CURDIR)/debian/fyclip/usr/share/icons/hicolor/$$s x$$s/apps/com.sarwar.fyclip.png')"; \
+			python3 -c "from PIL import Image; img=Image.open('icon.png').convert('RGBA').resize(($$s,$$s), getattr(Image, 'Resampling', Image).LANCZOS).save('$(CURDIR)/debian/fyclip/usr/share/icons/hicolor/$${s}x$${s}/apps/com.sarwar.fyclip.png')"; \
 		else \
-			install -m 0644 icon.png $(CURDIR)/debian/fyclip/usr/share/icons/hicolor/$$s x$$s/apps/com.sarwar.fyclip.png; \
+			install -m 0644 icon.png $(CURDIR)/debian/fyclip/usr/share/icons/hicolor/$${s}x$${s}/apps/com.sarwar.fyclip.png; \
 		fi; \
 	done
 	
 	# Install screenshots
-	install -m 0644 internal/app/assets/screenshots/screenshot1.png $(CURDIR)/debian/fyclip/usr/share/fyclip/screenshots/
-	install -m 0644 internal/app/assets/screenshots/screenshot2.png $(CURDIR)/debian/fyclip/usr/share/fyclip/screenshots/
-	install -m 0644 internal/app/assets/screenshots/screenshot3.png $(CURDIR)/debian/fyclip/usr/share/fyclip/screenshots/
-	install -m 0644 internal/app/assets/screenshots/screenshot4.png $(CURDIR)/debian/fyclip/usr/share/fyclip/screenshots/
-	install -m 0644 internal/app/assets/screenshots/screenshot5.png $(CURDIR)/debian/fyclip/usr/share/fyclip/screenshots/
+	for screenshot in internal/app/assets/screenshots/*.png; do \
+		install -m 0644 "$$screenshot" $(CURDIR)/debian/fyclip/usr/share/fyclip/screenshots/; \
+	done
 	
 	# Install manpage
 	install -m 0644 debian/fyclip.1 $(CURDIR)/debian/fyclip/usr/share/man/man1/

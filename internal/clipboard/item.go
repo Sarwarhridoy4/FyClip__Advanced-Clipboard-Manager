@@ -20,7 +20,9 @@ const (
 	ThumbnailWidth  = 150
 	ThumbnailHeight = 150
 	// JPEG quality for thumbnails
-	ThumbnailQuality = 70
+	ThumbnailQuality  = 70
+	maxImageDimension = 10000
+	maxImagePixels    = int64(16_000_000)
 )
 
 // ItemType represents the type of clipboard content
@@ -75,7 +77,7 @@ type Item struct {
 	Category     string    `json:"category,omitempty"`
 	Tags         []string  `json:"tags,omitempty"`
 
-	searchContent string    `json:"-"`
+	searchContent string `json:"-"`
 }
 
 // PrepareForSearch builds cached normalized text used for filtering.
@@ -421,8 +423,8 @@ func GenerateThumbnail(base64Data string) string {
 		return ""
 	}
 
-	// Decode image
-	img, format, err := image.Decode(bytes.NewReader(data))
+	// Reject extreme dimensions before the decoder allocates a full image.
+	img, format, err := DecodeImage(data)
 	if err != nil {
 		return ""
 	}
@@ -438,6 +440,12 @@ func GenerateThumbnail(base64Data string) string {
 	} else {
 		thumbH = ThumbnailHeight
 		thumbW = (w * ThumbnailHeight) / h
+	}
+	if thumbW < 1 {
+		thumbW = 1
+	}
+	if thumbH < 1 {
+		thumbH = 1
 	}
 
 	// Create thumbnail using nearest neighbor for speed
@@ -477,6 +485,34 @@ func GenerateThumbnail(base64Data string) string {
 	return base64.StdEncoding.EncodeToString(buf.Bytes())
 }
 
+// DecodeImage validates image dimensions before fully decoding untrusted data.
+func DecodeImage(data []byte) (image.Image, string, error) {
+	format, err := ValidateImage(data)
+	if err != nil {
+		return nil, "", err
+	}
+	img, decodedFormat, err := image.Decode(bytes.NewReader(data))
+	if err != nil {
+		return nil, "", err
+	}
+	if decodedFormat == "" {
+		decodedFormat = format
+	}
+	return img, decodedFormat, nil
+}
+
+// ValidateImage checks image dimensions without allocating the decoded pixel buffer.
+func ValidateImage(data []byte) (string, error) {
+	cfg, format, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil {
+		return "", err
+	}
+	if cfg.Width < 1 || cfg.Height < 1 || cfg.Width > maxImageDimension || cfg.Height > maxImageDimension || int64(cfg.Width)*int64(cfg.Height) > maxImagePixels {
+		return "", fmt.Errorf("image dimensions exceed safe limits")
+	}
+	return format, nil
+}
+
 // CompressImage compresses the image data to reduce memory footprint
 // Returns the compressed base64 string
 func CompressImage(base64Data string, maxWidth, maxHeight int, quality int) string {
@@ -491,7 +527,7 @@ func CompressImage(base64Data string, maxWidth, maxHeight int, quality int) stri
 	}
 
 	// Decode image
-	img, format, err := image.Decode(bytes.NewReader(data))
+	img, format, err := DecodeImage(data)
 	if err != nil {
 		return base64Data // Return original if decode fails
 	}

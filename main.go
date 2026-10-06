@@ -154,7 +154,7 @@ func handleUpdate() {
 
 	// Install
 	log.Println("Installing update...")
-	installer := update.NewInstaller(downloader.GetDownloadPath(), "FyClip")
+	installer := update.NewInstaller(downloader.GetDownloadPath(), "FyClip", downloader.ExpectedHash())
 	if err := installer.Install(); err != nil {
 		log.Printf("Installation error: %v", err)
 		output := installer.GetOutput()

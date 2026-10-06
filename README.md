@@ -9,15 +9,12 @@
   <a href="https://goreportcard.com/report/github.com/Sarwarhridoy4/FyClip---Advanced-Clipboard-Manager">
     <img src="https://goreportcard.com/badge/github.com/Sarwarhridoy4/FyClip---Advanced-Clipboard-Manager" alt="Go Report Card">
   </a>
-  <a href="https://github.com/Sarwarhridoy4/FyClip---Advanced-Clipboard-Manager/blob/main/LICENSE">
+  <a href="https://github.com/Sarwarhridoy4/FyClip---Advanced-Clipboard-Manager/blob/main/Licence">
     <img src="https://img.shields.io/github/license/Sarwarhridoy4/FyClip---Advanced-Clipboard-Manager" alt="License">
-  </a>
-  <a href="https://discord.gg/fyclip">
-    <img src="https://img.shields.io/discord/123456789" alt="Discord">
   </a>
 </p>
 
-> A secure, fast clipboard manager for text, images, HTML, and files, built with Go and Fyne v2.7+
+> A desktop clipboard manager for text, images, HTML, and files, built with Go and Fyne.
 
 **Current Version**: 2.5.0
 
@@ -63,8 +60,8 @@ FyClip is built for people who copy a lot and want fast recall, reliable history
 ### Highlights
 
 - **Rich clipboard history** for text, images, HTML, and files
-- **Fast search** with regex, fuzzy matching, and case-sensitive modes
-- **Pinned items, tags, categories, and snippets** for organization
+- **Searchable clipboard history** with a clear-search control
+- **Pinned items, automatic categories, and reusable snippets** for organization
 - **Encrypted local storage and backups** with safer clipboard write paths
 - **Cross-platform desktop integration** with tray controls, pause capture, and auto-update support
 
@@ -73,11 +70,11 @@ FyClip is built for people who copy a lot and want fast recall, reliable history
 | Area | Included |
 |------|----------|
 | **Capture** | Text, images, HTML, and file history |
-| **Search** | Regex, fuzzy matching, case-sensitive filtering, clear search |
-| **Organize** | Pinning, pinned-only view, smart categories, custom tags, snippets |
+| **Search** | Search clipboard history and clear the active query |
+| **Organize** | Pinning, pinned-only view, automatic categories, snippets |
 | **Actions** | Copy, export, bulk select, bulk delete, pin/unpin |
-| **Date** | Calendar date sorting, date range filtering, filter by exact date |
-| **Security** | AES-256-GCM storage, PBKDF2 key derivation, encrypted backups, sensitive-pattern detection, clipboard/path validation, command validation, ReDoS protection, UTF-8 sanitization, display sanitization, update asset/hash verification |
+| **Date** | Sort by calendar date and filter by start/end dates |
+| **Security** | AES-256-GCM encrypted history, password-protected backups, clipboard and path validation, and update asset/hash verification |
 | **System** | Autostart, pause capture, system tray actions, GitHub-based auto updates |
 
 ### Auto Update Feature
@@ -119,9 +116,9 @@ fyclip --update
 
 | Platform | Package Formats |
 |----------|----------------|
-| Linux | Snap, .deb, .AppImage |
-| Windows | .exe, .msi |
-| macOS | .dmg |
+| Linux | Check the release page for available packages, such as `.deb` or `.AppImage` |
+| Windows | Check the release page for available installers |
+| macOS | Check the release page for available packages |
 
 ### User Interface
 
@@ -218,16 +215,18 @@ fyclip.exe
 
 #### Linux
 
-| Format | Command |
-|--------|---------|
-| **Snap** | `sudo snap install fyclip` |
-| **PPA** | `sudo add-apt-repository ppa:sarwar-hossain/fyclip && sudo apt update && sudo apt install fyclip` |
-| **.deb** | `sudo dpkg -i fyclip_<version>_<arch>.deb` |
-| **.AppImage** | `chmod +x fyclip_<version>_<arch>.AppImage && ./fyclip_<version>_<arch>.AppImage` |
+Download an available Linux package from [Releases](https://github.com/Sarwarhridoy4/FyClip---Advanced-Clipboard-Manager/releases). For a Debian package:
 
-**PPA Repository**: https://launchpad.net/~sarwar-hossain/+archive/ubuntu/fyclip
+```bash
+sudo dpkg -i fyclip_<version>_<arch>.deb
+```
 
-> **Note for GNOME users**: The `.deb` and `.AppImage` packages now install the icon at all standard hicolor sizes (16, 24, 32, 48, 64, 128, and 256 pixels), each properly resized to match its directory. This ensures the dock, application menu, and file manager show a crisp FyClip icon instead of a blurry or generic fallback, and the desktop entry's `StartupWMClass` matches the app's real window class so the window manager links the icon correctly.
+For an AppImage:
+
+```bash
+chmod +x fyclip_<version>_<arch>.AppImage
+./fyclip_<version>_<arch>.AppImage
+```
 
 Download from [Releases](https://github.com/Sarwarhridoy4/FyClip---Advanced-Clipboard-Manager/releases)
 
@@ -237,10 +236,7 @@ Download the installer from [Releases](https://github.com/Sarwarhridoy4/FyClip--
 
 #### macOS
 
-```bash
-# Using Homebrew (if available)
-brew install fyclip
-```
+Download an available macOS package from [Releases](https://github.com/Sarwarhridoy4/FyClip---Advanced-Clipboard-Manager/releases).
 
 ### Building from Source
 
@@ -248,8 +244,8 @@ brew install fyclip
 
 | Requirement | Version | Notes |
 |-------------|---------|-------|
-| Go | 1.21+ | Programming language |
-| Fyne | 2.7+ | UI framework |
+| Go | 1.26.1 | Required by this checkout's `go.mod` |
+| Fyne | 2.8.1 | Resolved by Go modules |
 
 #### Linux Dependencies
 
@@ -380,44 +376,39 @@ fyne-cross darwin -arch=amd64
 
 | Shortcut | Action |
 |----------|--------|
-| `↑/↓` | Navigate through clipboard items |
-| `Enter` | Copy selected item to clipboard |
-| `Delete` | Delete selected item |
-| `Space` | Pin/unpin selected item |
-| `Escape` | Clear search / Close panel |
-| `Home` | Go to first item |
-| `End` | Go to last item |
-| `F1` | Open quick panel |
-| `Ctrl+F` | Focus search bar |
-| View → **Sort by Date** | Sort history newest-first by calendar date |
-| Toolbar → **Filter Date** | Open calendar picker to filter by date range |
+| `↑` / `↓` | Move through the history list |
+| `Enter` or `Ctrl+C` | Copy the selected item |
+| `Delete` | Delete the selected item |
+| `Space` | Copy the selected item; toggle selection in selection mode |
+| `Escape` | Exit selection mode |
+| `Home` / `End` | Move to the first / last item |
+| `F1` | Open the quick panel while FyClip is focused |
+| `Ctrl+F` | Focus search |
+| `Ctrl+B` / `Ctrl+R` | Open backup / restore |
 
 ### Bulk Operations
 
-| Shortcut | Action |
-|----------|--------|
-| `Ctrl+Click` | Add/remove item from selection |
-| Toolbar **Select** button | Enter selection mode |
+Use the toolbar's **Select** button to enter selection mode, then click items to select them. The toolbar provides select all, clear selection, pin, unpin, and delete actions.
 
 ### Features Guide
 
-1. **Pin Items**: Click the pin button or press Space to keep items at the top
-2. **Search**: Type in the search bar to filter items (supports regex, case-sensitive, fuzzy)
-3. **Favorites Filter**: Click "Favorites" to show pinned items only
+1. **Pin Items**: Select an item and click the **Pin** button to keep it at the top
+2. **Search**: Type in the search bar to filter clipboard history
+3. **Pinned Filter**: Click "Pinned Only" to show pinned items only
 4. **Preview**: Select an item to see full content (JSON pretty-printed automatically)
 5. **Export**: Click "Export" to save selected text or image
 6. **Pause Monitoring**: Use "Pause 5m" to temporarily stop capturing
 7. **History Limit**: Configure max unpinned history via toolbar settings
 8. **Clear History**: Remove all unpinned items
-9. **System Tray**: Minimize to tray, configure autostart/pause, access recent items
+9. **System Tray**: Show FyClip, open quick paste, configure autostart, or access recent items (where supported)
 10. **Snippets**: Create and manage text templates
 11. **Backup**: Create encrypted backups of your history
 12. **Categories**: Auto-categorized content (Links, Code, Contacts, Images, Files, Text)
-13. **Tags**: Add custom tags to organize items
+13. **Date tools**: Sort by date or filter with start and end dates in `YYYY-MM-DD` format
 14. **Theme**: Switch between Light, Dark, and System themes
 15. **Bulk Operations**: Multi-select items for batch actions
-16. **Sort by Date**: Sort history newest-first by calendar date
-17. **Filter by Date**: Use the calendar picker to show only items from a selected date or date range
+16. **Sort by Date**: Sort history by calendar date
+17. **Filter by Date**: Enter start and end dates (`YYYY-MM-DD`) to filter history
 
 ### Snippets
 
@@ -437,12 +428,12 @@ Snippets allow you to create reusable text templates with dynamic variables.
 
 | Variable | Description | Example Output |
 |----------|-------------|----------------|
-| `{{date}}` | Current date | 2026-03-25 |
+| `{{date}}` | Current date | 2026-10-06 |
 | `{{time}}` | Current time | 14:30:45 |
-| `{{datetime}}` | Full date and time | 2026-03-25 14:30:45 |
+| `{{datetime}}` | Full date and time | 2026-10-06 14:30:45 |
 | `{{year}}` | Current year | 2026 |
-| `{{month}}` | Current month (01-12) | 03 |
-| `{{day}}` | Current day (01-31) | 25 |
+| `{{month}}` | Current month (01-12) | 10 |
+| `{{day}}` | Current day (01-31) | 06 |
 | `{{clipboard}}` | Current clipboard content | (varies) |
 
 #### Example Snippet
@@ -453,15 +444,15 @@ Abbreviation: sig
 Category: General
 Content:
 Best regards,
-{{name}}
+{{clipboard}}
 {{date}}
 ```
 
-When used, this expands to:
+If the clipboard contains `John Doe`, this expands to:
 ```
 Best regards,
 John Doe
-2026-03-25
+2026-10-06
 ```
 
 ---
@@ -627,8 +618,8 @@ Current benchmark results:
 
 | Requirement | Version | Notes |
 |-------------|---------|-------|
-| Go | 1.21+ | Programming language |
-| Fyne | 2.7+ | UI framework |
+| Go | 1.26.1 | Required by this checkout's `go.mod` |
+| Fyne | 2.8.1 | Resolved by Go modules |
 
 ### Makefile Targets
 
@@ -731,7 +722,7 @@ See [CHANGELOG.md](CHANGELOG.md) for a history of changes.
 
 ## License
 
-MIT License - See [LICENSE](Licence) file for details
+MIT License - See [Licence](Licence) file for details
 
 ---
 
