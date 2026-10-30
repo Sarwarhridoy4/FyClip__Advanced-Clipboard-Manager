@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop">
+  <id>com.sarwar.fyclip.desktop</id>
+  <name>FyClip</name>
+  <summary>Advanced Clipboard Manager</summary>
+  <description>
+    <p>FyClip is a desktop clipboard manager for text, images, HTML, and files, built with Go and Fyne.</p>
+    <p>Features include searchable clipboard history, pinned items, automatic categories, reusable snippets, encrypted local storage, password-protected backups, system tray integration, pause capture, autostart, and GitHub-based auto-updates.</p>
+    <p>The AppImage bundles its runtime dependencies and runs on most Linux distributions without installation.</p>
+  </description>
+  <categories>
+    <category>Utility</category>
+  </categories>
+  <keywords>
+    <keyword>clipboard</keyword>
+    <keyword>copy</keyword>
+    <keyword>paste</keyword>
+    <keyword>history</keyword>
+  </keywords>
+  <icon>com.sarwar.fyclip</icon>
+  <launchable type="desktop-id">com.sarwar.fyclip.desktop</launchable>
+  <url type="homepage">https://github.com/Sarwarhridoy4/FyClip---Advanced-Clipboard-Manager</url>
+  <url type="bugtracker">https://github.com/Sarwarhridoy4/FyClip---Advanced-Clipboard-Manager/issues</url>
+  <url type="donation">https://github.com/Sarwarhridoy4/FyClip---Advanced-Clipboard-Manager</url>
+  <developer>
+    <name>Sarwar Hossain</name>
+    <url>https://github.com/Sarwarhridoy4</url>
+  </developer>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="2.7.0" date="2026-10-30">
+      <description>
+        <p>Encrypted clipboard history, password-protected backups, auto-updates with SHA-256 digest verification, and image decompression bomb prevention.</p>
+      </description>
+    </release>
+  </releases>
+</component>

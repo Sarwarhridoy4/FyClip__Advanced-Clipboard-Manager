@@ -540,16 +540,26 @@ EOF
     cp "${ICON_PATH}" "${APPDIR}/${APP_ID}.png"
     ln -sf "${APP_ID}.png" "${APPDIR}/.DirIcon"
 
+    # Install AppStream metainfo for AppImage Hub / software center discovery
+    mkdir -p "${APPDIR}/usr/share/metainfo"
+    if [ -f "internal/app/assets/${APP_ID}.metainfo.xml" ]; then
+        cp -f "internal/app/assets/${APP_ID}.metainfo.xml" "${APPDIR}/usr/share/metainfo/${APP_ID}.metainfo.xml"
+    fi
+
     # Update desktop file for AppImage execution context
     sed -i -E "s|^Exec=.*|Exec=AppRun|" "${APPDIR}/${APP_ID}.desktop"
     sed -i -E "s|^Icon=.*|Icon=${APP_ID}|" "${APPDIR}/${APP_ID}.desktop"
 
-    # Bundle runtime dependencies (exclude core system libs provided by the host)
+    # Bundle runtime dependencies for broad compatibility with older distros.
+    # Bundle as many shared libraries as possible (including glibc family) so
+    # the AppImage runs on older systems. Only skip the dynamic linker and
+    # linux-vdso which cannot be bundled.
     mkdir -p "${APPDIR}/usr/lib"
     ldd "${BIN_PATH}" 2>/dev/null | awk '/=> \// {print $3}' | \
         while read -r lib; do
+            # Skip dynamic linker and vDSO (kernel-provided, cannot be bundled)
             case "${lib}" in
-                */libc.so*|*/libpthread.so*|*/librt.so*|*/libdl.so*|*/libm.so*|*/libgcc_s.so*|*/libstdc++.so*|*/libglib*.so*|*/libX11*.so*|*/libxcb*.so*|*/libwayland*.so*)
+                */ld-linux*.so*|linux-vdso.so.1)
                     ;;
                 *)
                     if [ -f "${lib}" ]; then
@@ -559,7 +569,7 @@ EOF
             esac
         done || true
 
-    # Build AppImage
+    # Build AppImage with compatibility options
     APPIMAGE_TOOL="$(command -v appimagetool 2>/dev/null || true)"
     if [ -z "${APPIMAGE_TOOL}" ] && [ -x "${LOCAL_TOOLS_DIR}/bin/appimagetool" ]; then
         APPIMAGE_TOOL="${LOCAL_TOOLS_DIR}/bin/appimagetool"
@@ -571,6 +581,7 @@ EOF
 
     log_info "Running appimagetool on ${APPDIR}..."
     cd "${DIST_DIR}"
+    # --appimage-extract-and-run removed (testing flag, not for production)
     "${APPIMAGE_TOOL}" \
         "${WORK_DIR}/FyClip.AppDir" \
         "${PKG_NAME}_${VERSION}_${APPIMAGE_ARCH}.AppImage"

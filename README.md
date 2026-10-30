@@ -329,10 +329,25 @@ This produces:
 - `dist/fyclip_<version>_<arch>.deb` - Debian package (Debian/Ubuntu)
 - `dist/fyclip_<version>_<arch>.AppImage` - AppImage (universal Linux)
 - `dist/fyclip_<version>_<arch>.tar.gz` - Tarball (Arch, Fedora, and other distros)
-- `fyne` CLI (`go install github.com/fyne-io/fyne@latest`)
-- `dpkg-deb`
-- `appimagetool`
-- `tar`
+
+**AppImage Hub submission:**
+
+The built AppImage includes AppStream metainfo (`share/metainfo/com.sarwar.fyclip.metainfo.xml`) for software-center discovery and AppImage Hub submission. To submit to [AppImage Hub](https://appimage.github.io/appimagehub/):
+
+1. Build the AppImage: `./build.sh 2.7.0 appimage`
+2. Test it locally: `chmod +x dist/fyclip_2.7.0_x86_64.AppImage && ./dist/fyclip_2.7.0_x86_64.AppImage`
+3. Fork https://github.com/AppImage/AppImageKit (or the AppImageHub repo)
+4. Add your AppImage metadata following the AppImageHub submission guidelines
+5. Submit a pull request with the AppImage file and its `.metainfo.xml`
+
+**AppImage older-version compatibility:**
+
+The AppImage bundles all shared libraries except the dynamic linker (`ld-linux`) and `linux-vdso` (kernel-provided), so it runs on older distributions. For maximum compatibility:
+
+1. **Build on the oldest target glibc** — glibc is not forward-compatible; an AppImage built on glibc 2.34 will not run on glibc 2.28. Build on the oldest distribution you want to support (e.g., Ubuntu 18.04 / CentOS 7 for glibc 2.17-2.27).
+2. **Link against older glibc** — use an older toolchain or container (e.g., `ubuntu:18.04`, `centos:7`) when building so the binary's minimum glibc version is low.
+3. The bundled libraries in `AppDir/usr/lib/` take precedence via `LD_LIBRARY_PATH` in `AppRun`.
+
 
 ### Using Makefile
 
