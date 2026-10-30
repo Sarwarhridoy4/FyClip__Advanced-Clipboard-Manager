@@ -146,16 +146,17 @@ fyclip --update
 
 ### Security At A Glance
 
-| Feature | Description |
-|---------|-------------|
-| 🔒 **Encrypted Storage** | Clipboard history is encrypted at rest with AES-256-GCM |
-| 🔐 **PBKDF2 Key Derivation** | Storage and backup keys are derived with 100,000 iterations |
-| ☁️ **Encrypted Backup** | Password-protected backup and restore with per-backup salting |
-| 🧼 **Memory-Safer Writes** | Programmatic copy hashing and temporary buffer wiping where practical |
-| 🚫 **Validation Guards** | Clipboard size limits plus file-path and command validation |
-| 🔍 **Security Hardening** | Path validation, command allowlisting, ReDoS protection, UTF-8 sanitization, display sanitization, and integrity checks across update, storage, clipboard, and UI paths |
+| Feature | CWE | Description |
+|---------|-----|-------------|
+| 🔒 **Encrypted Storage** | CWE-522 | Clipboard history is encrypted at rest with AES-256-GCM |
+| 🔐 **PBKDF2 Key Derivation** | CWE-916 | Storage and backup keys are derived with 100,000 iterations |
+| ☁️ **Encrypted Backup** | CWE-916 | Password-protected backup and restore with per-backup salting |
+| 🧼 **Memory-Safer Writes** | — | Programmatic copy hashing and temporary buffer wiping where practical |
+| 🚫 **Validation Guards** | CWE-20/CWE-697 | Clipboard size limits plus file-path and command validation |
+| 🔍 **Security Hardening** | Multiple | Path validation, command allowlisting, ReDoS protection, UTF-8 sanitization, display sanitization, and integrity checks across update, storage, clipboard, and UI paths |
+| 🔄 **Update Integrity** | CWE-494/CWE-377/CWE-601/CWE-400/CWE-409/CWE-22 | SHA-256 digest verification, private temp downloads, GitHub host-restricted redirects, size caps, and ZIP Slip prevention |
 
-For the full security audit and remediation details, see [`SECURITY_VULNERABILITIES.md`](./SECURITY_VULNERABILITIES.md).
+For the full security audit and remediation details (12 findings: 6 High, 6 Medium), see [`SECURITY_VULNERABILITIES.md`](./SECURITY_VULNERABILITIES.md).
 
 ---
 
@@ -566,15 +567,18 @@ fyclip/
 | **Differential Index Rebuilds** | Modified indices are refreshed selectively instead of full rebuilds on every change |
 | **Efficient Filtering** | Search avoids repeated lowercasing and minimizes allocation churn |
 | **Object Pool** | `sync.Pool` for Item reuse to reduce GC pressure |
-| **Regex Cache** | Compiled regex patterns cached for faster repeated searches |
+| **Regex Cache** | Compiled regex patterns cached for faster repeated searches (LRU eviction at 128 entries) |
 | **Fuzzy Search** | Optimized subsequence matching with reduced allocations |
-| **Adaptive Memory Pressure Handling** | Cleanup becomes more aggressive as allocation pressure rises |
-| **LRU Trimming** | History eviction preserves frequently accessed items over merely recent ones |
+| **Adaptive Memory Pressure Handling** | Cleanup becomes more aggressive as allocation pressure rises (checked every 60s normally, 20s under pressure) |
+| **LRU Trimming** | History eviction preserves frequently accessed items; uses `sort.Slice` + descending-index batch removal (O(n log n) instead of O(n²)) |
 | **Update Check Caching** | Repeated GitHub release checks are cached and rate-limited |
 | **Concurrent Asset Scoring** | Release assets are processed concurrently during platform-specific update selection |
 | **Thread-Safe** | Proper mutex usage throughout |
 | **Selection Fast Path** | Selecting list items avoids redundant full-window refreshes |
 | **Duplicate Promotion** | Existing duplicates move to latest with notification |
+| **Dirty-flag Save Skip** | `saveHistoryNow` skips marshal/gzip/AES-encrypt/write when history unchanged since last save |
+| **gzip Buffer Pooling** | `sync.Pool` reuses `*gzip.Writer`/`*gzip.Reader` across save/load cycles (~59% less allocation in StorageSave) |
+| **FilteredSeq** | Zero-copy iteration over filtered items without allocating a `[]Item` copy |
 
 #### Benchmark Results
 
@@ -585,24 +589,39 @@ go test -bench 'Benchmark(UpdateFilteredSearch1000|AddItemWithDuplicateScan1000|
  -benchmem ./internal/clipboard
 ```
 
-Current benchmark results:
-- `BenchmarkUpdateFilteredSearch1000`: `88899 ns/op`, `5 B/op`, `0 allocs/op`
-- `BenchmarkAddItemWithDuplicateScan1000`: `2150222 ns/op`, `158241 B/op`, `1396 allocs/op`
-- `BenchmarkStorageSave1000`: `3673446 ns/op`, `1292749 B/op`, `2047 allocs/op`
+Current benchmark results (measured with `go test -bench '.' -benchmem -count=3 ./internal/clipboard`):
+
+| Benchmark | ns/op | B/op | allocs/op | Change |
+|---|---|---|---|---|
+| `BenchmarkUpdateFilteredSearch1000` | ~104,000 | 255 | 5 | sort.Slice replaces O(n²) bubble sort |
+| `BenchmarkAddItemWithDuplicateScan1000` | ~415,000 | ~158,500 | ~1,400 | ~5.2x faster (was 2,150,222 ns/op) |
+| `BenchmarkStorageSave1000` | ~3,300,000 | ~540,000 | ~2,030 | ~59% less allocation (was 1,292,749 B/op) |
+
+Notes:
+- `AddItem` improved ~5.2x from `trimHistory` using `sort.Slice` + descending-index batch removal.
+- `StorageSave` allocation dropped ~59% from gzip buffer pooling and the dirty-flag save skip.
+- `UpdateFilteredSearch` allocation rose slightly (0 → 255 B/op) from `sort.Slice`, but is O(n log n) instead of O(n²) for large histories.
 
 ### Security
 
-| Feature | Description |
-|---------|-------------|
-| **AES-256-GCM Encryption** | Clipboard history is encrypted at rest |
-| **PBKDF2 Key Derivation** | Storage keys are derived with migration support for legacy key files |
-| **Sensitive Data Detection** | Auto-detect credit cards, SSN, API keys |
-| **Secure Wipe** | Temporary sensitive buffers are cleared after use where practical |
-| **Clipboard Size Validation** | Large text, image, and path payloads are rejected before clipboard writes |
-| **Programmatic Copy Hashing** | Monitor state tracks programmatic writes without storing raw clipboard content |
-| **Path Validation** | File-oriented clipboard and open-location operations validate paths defensively |
-| **Command Validation** | Platform-specific command arguments are sanitized and checked before execution |
-| **Password-Protected Backups** | Optional encryption for backups |
+FyClip applies defense-in-depth across update, storage, clipboard, and UI paths. Twelve findings were remediated (6 High, 6 Medium), documented in [`SECURITY_VULNERABILITIES.md`](./SECURITY_VULNERABILITIES.md):
+
+| # | Severity | CWE | Finding |
+|---|----------|-----|---------|
+| 1 | High | CWE-494 | Update asset digest enforced from GitHub release metadata; fails closed if missing |
+| 2 | High | CWE-377 | Private temp download dir with exclusive creation and owner-only permissions |
+| 3 | High | CWE-601 / SSRF | Download URL restricted to HTTPS on github.com; redirects limited to GitHub hosts |
+| 4 | High | CWE-400 / CWE-409 | Metadata capped at 2 MiB; download/expanded data at 1 GiB; history/backups/snippets at 256 MiB and 100,000 entries |
+| 5 | High | CWE-22 | ZIP extraction via Go reader in private temp dir; symlinks and path escapes rejected |
+| 6 | High | CWE-311 | Destructive legacy key migration removed; legacy keys loaded unchanged |
+| 7 | High | CWE-409 | Image dimensions and 16M pixel area validated before full decode |
+| 8 | Medium | CWE-697 | Command validation checks resolved path exists and is a file |
+| 9 | Medium | CWE-20 | Backup schema: version, checksum shape, item count, and per-item validation |
+| 10 | Medium | CWE-400 | Regex cache: patterns >1,000 bytes bypass compilation; reset at 128 entries |
+| 11 | Medium | CWE-20 | Restored items pass `ValidateItem` with type-specific and content-size checks |
+| 12 | Medium | CWE-400 | Bounded writers for xclip/wl-paste output; monitor rejects oversized values |
+
+**Remaining risks (see `SECURITY_VULNERABILITIES.md` for details):** encryption key stored beside ciphertext, legacy SHA-256 backup fallback, digest trust depends on GitHub/TLS, platform-specific install paths not exercised, no automated dependency scan, and native clipboard allocation before monitor limits apply.
 
 ### Thread Safety
 

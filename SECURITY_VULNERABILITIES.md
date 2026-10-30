@@ -24,17 +24,17 @@ The previous version of this document described 19 issues as fixed, but multiple
 
 6. **Legacy encryption-key migration could invalidate stored history — High (CWE-311/data loss).** The asynchronous migration replaced the old key with unrelated PBKDF2 material without re-encrypting history. The migration was removed; existing legacy keys continue to be loaded unchanged. This fixes the destructive migration behavior, but does not upgrade legacy key storage.
 
-7. **System command validation rejected commands outside temp — Medium (CWE-697).** `validateCommandExists` incorrectly required tools such as `dpkg`, `sudo`, and `msiexec` to be located under the temporary directory. It now checks that the resolved command exists and is a file.
+7. **Image decompression bomb through clipboard history — High (CWE-409).** Thumbnail generation decoded arbitrary image dimensions before resizing, allowing a small compressed image to request a huge pixel buffer. Image decoding now checks dimensions and limits area to 16 million pixels before full decode; preview validates dimensions before handing data to Fyne. Invalid items are also rejected by `Manager.AddItem`, and `Storage.Save` validates records before writing.
 
-8. **Backup schema validation was too weak — Medium (CWE-20).** Backup restore accepted any non-empty version/checksum and checked only item IDs and types. It now enforces the supported version, checksum shape, item-count and per-item validations before restoring. Backup inspection and import also use bounded reads.
+8. **System command validation rejected commands outside temp — Medium (CWE-697).** `validateCommandExists` incorrectly required tools such as `dpkg`, `sudo`, and `msiexec` to be located under the temporary directory. It now checks that the resolved command exists and is a file.
 
-9. **Regex cache could grow without limit — Medium (CWE-400).** Arbitrary search patterns were retained indefinitely. Patterns over 1,000 bytes bypass compilation, and the cache is reset when it reaches 128 entries.
+9. **Backup schema validation was too weak — Medium (CWE-20).** Backup restore accepted any non-empty version/checksum and checked only item IDs and types. It now enforces the supported version, checksum shape, item-count and per-item validations before restoring. Backup inspection and import also use bounded reads.
 
-10. **Weakly bounded clipboard item fields — Medium (CWE-20).** Restored items now pass `ValidateItem`, which checks type-specific input and enforces the content-size limit across all item types.
+10. **Regex cache could grow without limit — Medium (CWE-400).** Arbitrary search patterns were retained indefinitely. Patterns over 1,000 bytes bypass compilation, and the cache is reset when it reaches 128 entries.
 
-11. **Clipboard subprocess output buffered without a limit — Medium (CWE-400).** `xclip` and `wl-paste` output used `Cmd.Output()`, which can buffer arbitrary clipboard contents. Linux helper output now uses bounded writers; monitor handlers also reject text, image, and HTML values above their configured limits before conversion and storage.
+11. **Weakly bounded clipboard item fields — Medium (CWE-20).** Restored items now pass `ValidateItem`, which checks type-specific input and enforces the content-size limit across all item types.
 
-12. **Image decompression bomb through clipboard history — High (CWE-409).** Thumbnail generation decoded arbitrary image dimensions before resizing, allowing a small compressed image to request a huge pixel buffer. Image decoding now checks dimensions and limits area to 16 million pixels before full decode; preview validates dimensions before handing data to Fyne. Invalid items are also rejected by `Manager.AddItem`, and `Storage.Save` validates records before writing.
+12. **Clipboard subprocess output buffered without a limit — Medium (CWE-400).** `xclip` and `wl-paste` output used `Cmd.Output()`, which can buffer arbitrary clipboard contents. Linux helper output now uses bounded writers; monitor handlers also reject text, image, and HTML values above their configured limits before conversion and storage.
 
 ## Remaining risks and limitations
 

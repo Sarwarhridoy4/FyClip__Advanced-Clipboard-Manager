@@ -33,6 +33,25 @@ const (
 	saltLen          = 16     // Salt length in bytes
 )
 
+// gzipWriterPool reuses gzip writers to avoid reallocating internal
+// compression buffers on every compress/decompress cycle.
+var (
+	gzipWriterPool = sync.Pool{
+		New: func() interface{} {
+			w, err := gzip.NewWriterLevel(new(bytes.Buffer), gzip.DefaultCompression)
+			if err != nil {
+				panic(err)
+			}
+			return w
+		},
+	}
+	gzipReaderPool = sync.Pool{
+		New: func() interface{} {
+			return &gzip.Reader{}
+		},
+	}
+)
+
 // Storage handles persistence of clipboard history
 type Storage struct {
 	mu       sync.RWMutex
@@ -358,24 +377,24 @@ func decrypt(ciphertext []byte, key []byte) ([]byte, error) {
 // compress compresses data using gzip
 // Returns the original data if compression fails (for safety)
 func compress(data []byte) []byte {
-	var buf bytes.Buffer
-	writer, err := gzip.NewWriterLevel(&buf, gzip.DefaultCompression)
-	if err != nil {
-		return data // Return original if compression fails
-	}
+	buf := new(bytes.Buffer)
+	writer := gzipWriterPool.Get().(*gzip.Writer)
+	writer.Reset(buf)
 
-	_, err = writer.Write(data)
-	if err != nil {
-		writer.Close()
+	if _, err := writer.Write(data); err != nil {
+		gzipWriterPool.Put(writer)
 		return data
 	}
 
-	err = writer.Close()
-	if err != nil {
+	if err := writer.Close(); err != nil {
+		gzipWriterPool.Put(writer)
 		return data
 	}
 
-	return buf.Bytes()
+	result := make([]byte, buf.Len())
+	copy(result, buf.Bytes())
+	gzipWriterPool.Put(writer)
+	return result
 }
 
 // decompress decompresses gzip data
@@ -386,11 +405,12 @@ func decompress(data []byte) ([]byte, error) {
 		return data, fmt.Errorf("not gzip compressed")
 	}
 
-	reader, err := gzip.NewReader(bytes.NewReader(data))
-	if err != nil {
+	reader := gzipReaderPool.Get().(*gzip.Reader)
+	if err := reader.Reset(bytes.NewReader(data)); err != nil {
+		gzipReaderPool.Put(reader)
 		return data, err
 	}
-	defer reader.Close()
+	defer gzipReaderPool.Put(reader)
 
 	return io.ReadAll(io.LimitReader(reader, maxStoredHistoryBytes+1))
 }

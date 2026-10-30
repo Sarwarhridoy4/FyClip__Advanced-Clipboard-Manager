@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -63,6 +64,9 @@ type Manager struct {
 	// Differential tracking for optimized index updates
 	indexNeedsFullRebuild bool         // Flag to track if full rebuild is needed
 	modifiedIndices       map[int]bool // Track which indices have been modified
+
+	// dirty indicates history has changed since the last successful save.
+	dirty bool
 
 	selectedIndex   int
 	searchQuery     string
@@ -253,6 +257,10 @@ func (m *Manager) saveHistory() {
 // saveHistoryNow writes a snapshot to storage immediately.
 func (m *Manager) saveHistoryNow() {
 	m.mu.RLock()
+	if !m.dirty {
+		m.mu.RUnlock()
+		return
+	}
 	items := make([]Item, len(m.history))
 	copy(items, m.history)
 	m.mu.RUnlock()
@@ -261,7 +269,12 @@ func (m *Manager) saveHistoryNow() {
 		if m.onError != nil {
 			m.onError(fmt.Errorf("failed to save history: %w", err))
 		}
+		return
 	}
+
+	m.mu.Lock()
+	m.dirty = false
+	m.mu.Unlock()
 }
 
 // SaveHistory is a public method to force save history
@@ -337,6 +350,7 @@ func (m *Manager) AddItem(item Item) AddItemResult {
 
 	// Mark differential index update needed
 	m.modifiedIndices[newIndex] = true
+	m.dirty = true
 
 	// Trim unpinned items
 	m.trimHistory()
@@ -364,6 +378,7 @@ func (m *Manager) removeAtIndex(idx int) {
 
 	// Remove from history
 	m.history = append(m.history[:idx], m.history[idx+1:]...)
+	m.dirty = true
 
 	// Return removed item to pool
 	ReturnToPool(&item)
@@ -416,29 +431,21 @@ func (m *Manager) trimHistory() {
 		}
 	}
 
-	// Sort by LastAccessed (oldest first = least recently used)
-	for i := 0; i < len(unpinnedItems)-1; i++ {
-		for j := i + 1; j < len(unpinnedItems); j++ {
-			if unpinnedItems[i].item.LastAccessed.After(unpinnedItems[j].item.LastAccessed) {
-				unpinnedItems[i], unpinnedItems[j] = unpinnedItems[j], unpinnedItems[i]
-			}
-		}
-	}
+	// Sort by LastAccessed ascending (oldest first = least recently used)
+	sort.Slice(unpinnedItems, func(i, j int) bool {
+		return unpinnedItems[i].item.LastAccessed.Before(unpinnedItems[j].item.LastAccessed)
+	})
 
-	// Remove excess items (least recently used first)
+	// Remove excess items (least recently used first), in descending index order
+	// so that earlier removals do not shift the indices of items yet to be removed.
 	itemsToRemove := unpinnedCount - m.maxHistoryItems
+	removeIndices := make([]int, 0, itemsToRemove)
 	for i := 0; i < itemsToRemove && i < len(unpinnedItems); i++ {
-		// Find the current index of this item (it may have shifted due to previous removals)
-		currentIndex := -1
-		for j := range m.history {
-			if m.history[j].ID == unpinnedItems[i].item.ID {
-				currentIndex = j
-				break
-			}
-		}
-		if currentIndex >= 0 {
-			m.removeAtIndex(currentIndex)
-		}
+		removeIndices = append(removeIndices, unpinnedItems[i].index)
+	}
+	sort.Ints(removeIndices)
+	for i := len(removeIndices) - 1; i >= 0; i-- {
+		m.removeAtIndex(removeIndices[i])
 	}
 }
 
@@ -491,13 +498,9 @@ func (m *Manager) updateFiltered() {
 	}
 
 	if sortByDate {
-		for i := 0; i < len(unpinned)-1; i++ {
-			for j := i + 1; j < len(unpinned); j++ {
-				if unpinned[i].Timestamp.Before(unpinned[j].Timestamp) {
-					unpinned[i], unpinned[j] = unpinned[j], unpinned[i]
-				}
-			}
-		}
+		sort.Slice(unpinned, func(i, j int) bool {
+			return unpinned[i].Timestamp.After(unpinned[j].Timestamp)
+		})
 	}
 
 	m.filtered = m.filtered[:0]
@@ -533,9 +536,9 @@ func (m *Manager) CheckMemoryPressure() {
 
 	now := time.Now()
 	// Check more frequently under pressure, less frequently when stable
-	checkInterval := 30 * time.Second
+	checkInterval := 60 * time.Second
 	if m.memoryPressureLevel > 0 {
-		checkInterval = 10 * time.Second
+		checkInterval = 20 * time.Second
 	}
 
 	if now.Sub(m.lastMemoryCheck) < checkInterval {
@@ -883,6 +886,20 @@ func (m *Manager) GetFiltered() []Item {
 	return items
 }
 
+// FilteredSeq iterates over filtered items without copying the slice.
+// The yielded Items are snapshots valid at iteration time; do not mutate
+// the returned Item values and expect them to reflect live state.
+func (m *Manager) FilteredSeq(yield func(Item) bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	for _, p := range m.filtered {
+		if !yield(*p) {
+			return
+		}
+	}
+}
+
 // GetFilteredCount returns the count of filtered items
 func (m *Manager) GetFilteredCount() int {
 	m.mu.RLock()
@@ -1032,6 +1049,7 @@ func (m *Manager) ClearUnpinned() {
 	}
 
 	m.history = pinned
+	m.dirty = true
 	m.buildIndexMaps()
 	m.selectedIndex = -1
 	m.mu.Unlock()

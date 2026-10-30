@@ -32,9 +32,12 @@ func DefaultSearchOptions() *SearchOptions {
 }
 
 // regexCache stores compiled regex patterns for performance
+// regexOrder tracks insertion order for LRU eviction when full.
 var (
-	regexCacheMu sync.RWMutex
-	regexCache   = make(map[string]*regexp.Regexp)
+	regexCacheMu  sync.RWMutex
+	regexCache    = make(map[string]*regexp.Regexp)
+	regexOrder    []string
+	regexCacheMax = 128
 )
 
 // ClearRegexCache clears the regex cache (useful for testing)
@@ -42,6 +45,18 @@ func ClearRegexCache() {
 	regexCacheMu.Lock()
 	defer regexCacheMu.Unlock()
 	regexCache = make(map[string]*regexp.Regexp)
+	regexOrder = nil
+}
+
+// evictOldestRegex removes the least-recently-added entry from the cache.
+// Caller must hold regexCacheMu.
+func evictOldestRegexLocked() {
+	if len(regexOrder) == 0 {
+		return
+	}
+	oldest := regexOrder[0]
+	regexOrder = regexOrder[1:]
+	delete(regexCache, oldest)
 }
 
 // SearchItem searches an item with the given query and options
@@ -103,10 +118,11 @@ func searchWithRegex(content, pattern string) bool {
 			// If regex is invalid, fall back to substring search
 			return strings.Contains(content, pattern)
 		}
-		if len(regexCache) >= 128 {
-			regexCache = make(map[string]*regexp.Regexp)
+		if len(regexCache) >= regexCacheMax {
+			evictOldestRegexLocked()
 		}
 		regexCache[pattern] = re
+		regexOrder = append(regexOrder, pattern)
 	}
 
 	if len(content) > regexMaxInputLen {
