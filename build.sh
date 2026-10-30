@@ -216,7 +216,7 @@ install_system_dependencies() {
     
     case "${PM}" in
         apt-get)
-            packages=(build-essential curl wget tar dpkg debhelper libgl1 libglib2.0-0 libxcursor1 libxrandr2 libxinerama1 libxi6 libgtk-3-0 xclip xsel wl-clipboard)
+            packages=(build-essential curl wget tar dpkg debhelper libgl1-mesa-dev libxcursor-dev libxrandr-dev libxinerama-dev libxi-dev libgl-dev libxxf86vm-dev libxkbcommon-dev libwayland-dev libx11-dev libxext-dev libxrender-dev libxfixes-dev libxss-dev libxtst-dev libasound2-dev libpulse-dev libgl1 libglib2.0-0 libxcursor1 libxrandr2 libxinerama1 libxi6 libgtk-3-0 xclip xsel wl-clipboard)
             ;;
         dnf)
             packages=( @development-tools curl wget tar dpkg glibc libXcursor libXrandr libXinerama libXi gtk3 xclip xsel wl-clipboard)
