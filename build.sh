@@ -306,7 +306,9 @@ get_version() {
 # Get project SHA256
 get_project_sha256() {
     if git rev-parse --git-dir >/dev/null 2>&1; then
-        git ls-files | sort | xargs -d '\n' sha256sum 2>/dev/null | sha256sum | awk '{print $1}'
+        git ls-files | sort | while IFS= read -r f; do
+            [ -f "$f" ] && sha256sum "$f"
+        done 2>/dev/null | sha256sum | awk '{print $1}'
     else
         echo "unavailable"
     fi
@@ -580,10 +582,12 @@ EOF
     fi
 
     log_info "Running appimagetool on ${APPDIR}..."
+    # Compute absolute AppDir path before cd'ing to DIST_DIR
+    APPDIR_ABS="$(cd "${WORK_DIR}" && pwd)/FyClip.AppDir"
     cd "${DIST_DIR}"
     # --appimage-extract-and-run removed (testing flag, not for production)
     "${APPIMAGE_TOOL}" \
-        "${WORK_DIR}/FyClip.AppDir" \
+        "${APPDIR_ABS}" \
         "${PKG_NAME}_${VERSION}_${APPIMAGE_ARCH}.AppImage"
     cd - >/dev/null
 
