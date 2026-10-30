@@ -5,7 +5,7 @@
 
 override_dh_auto_build:
 	# Build the Go binary
-	go build -o fyclip -ldflags "-s -w -X main.Version=$(shell dpkg-parsechangelog -S Version | sed 's/-.*//') -X main.BuildTime=$(shell date -u '+%Y-%m-%d %H:%M:%S UTC') -X github.com/Sarwarhridoy4/FyClip---Advanced-Clipboard-Manager/internal/version.Version=$(shell dpkg-parsechangelog -S Version | sed 's/-.*//') -X github.com/Sarwarhridoy4/FyClip---Advanced-Clipboard-Manager/internal/version.BuildTime=$(shell date -u '+%Y-%m-%d %H:%M:%S UTC')" .
+	go build -o fyclip -ldflags "-s -w -X main.Version=$(shell dpkg-parsechangelog -S Version | sed 's/-.*//') -X main.BuildTime=$(shell date -u '+%Y-%m-%dT%H:%M:%SZ') -X github.com/Sarwarhridoy4/FyClip---Advanced-Clipboard-Manager/internal/version.Version=$(shell dpkg-parsechangelog -S Version | sed 's/-.*//') -X github.com/Sarwarhridoy4/FyClip---Advanced-Clipboard-Manager/internal/version.BuildTime=$(shell date -u '+%Y-%m-%dT%H:%M:%SZ')" .
 
 override_dh_auto_install:
 	# Create directory structure
