@@ -137,6 +137,18 @@ deb-version: build
 	@echo "Building Debian package version $(VERSION)..."
 	./build-deb.sh $(VERSION)
 
+# Build tarball (covers Arch, Fedora, and other non-Debian distros)
+.PHONY: tarball
+tarball: build
+	@echo "Building tarball..."
+	FYCLIP_PACKAGE_TYPES=tarball ./build.sh $(VERSION)
+
+# Build all package types (deb, appimage, tarball)
+.PHONY: package-all
+package-all: build
+	@echo "Building all package types..."
+	./build.sh $(VERSION)
+
 # Build PPA source package
 .PHONY: ppa
 ppa: build
@@ -322,9 +334,11 @@ help:
 	@echo "  watch          - Run tests in watch mode"
 	@echo ""
 	@echo "=== Release ==="
-	@echo "  package        - Package the application (Fyne/AppImage/Tarball)"
+	@echo "  package        - Package the application (all types: deb, appimage, tarball)"
+	@echo "  package-all    - Build all package types (deb, appimage, tarball)"
 	@echo "  deb            - Build Debian package"
 	@echo "  deb-version    - Build Debian package with specific version (VERSION=...)"
+	@echo "  tarball        - Build tarball for Arch/Fedora/other non-Debian distros"
 	@echo "  ppa            - Build PPA source package"
 	@echo "  ppa-version    - Build PPA source package with specific version (VERSION=...)"
 	@echo "  release        - Create release"

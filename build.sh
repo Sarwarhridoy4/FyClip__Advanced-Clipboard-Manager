@@ -399,6 +399,28 @@ main() {
         i386|i686) ARCH="i386"; APPIMAGE_ARCH="i686" ;;
         *) ARCH="$ARCH_RAW"; APPIMAGE_ARCH="$ARCH_RAW" ;;
     esac
+
+    # Select package types to build (deb, appimage, tarball, all)
+    #   $2 or FYCLIP_PACKAGE_TYPES env var
+    DEFAULT_PKG_TYPES="all"
+    if [ -n "${FYCLIP_PACKAGE_TYPES:-}" ]; then
+        PKG_TYPES="${FYCLIP_PACKAGE_TYPES}"
+    elif [ -n "${2:-}" ]; then
+        PKG_TYPES="${2}"
+    else
+        PKG_TYPES="${DEFAULT_PKG_TYPES}"
+    fi
+    case "${PKG_TYPES}" in
+        all) BUILD_DEB=true; BUILD_APPIMAGE=true; BUILD_TARBALL=true ;;
+        deb) BUILD_DEB=true; BUILD_APPIMAGE=false; BUILD_TARBALL=false ;;
+        appimage) BUILD_DEB=false; BUILD_APPIMAGE=true; BUILD_TARBALL=false ;;
+        tarball) BUILD_DEB=false; BUILD_APPIMAGE=false; BUILD_TARBALL=true ;;
+        *)
+            log_error "Invalid package types: ${PKG_TYPES}. Use: deb, appimage, tarball, or all"
+            exit 1
+            ;;
+    esac
+    log_info "Package types: deb=${BUILD_DEB} appimage=${BUILD_APPIMAGE} tarball=${BUILD_TARBALL}"
     
     log_info "Building ${APP_NAME} ${VERSION} (${ARCH})"
     
@@ -457,6 +479,7 @@ main() {
     # Build Debian Package using dpkg-buildpackage (official Debian way)
     # Uses the existing debian/ directory (control, rules, postinst, postrm, changelog, etc.)
     # ---------------------------------------------------------------------
+    if [ "${BUILD_DEB}" = true ]; then
     log_info "Building Debian package..."
 
     # Ensure debian/rules is executable (required by dpkg-buildpackage)
@@ -493,10 +516,12 @@ main() {
         log_error "Debian package not found after dpkg-buildpackage"
         exit 1
     fi
+    fi
     
     # ---------------------------------------------------------------------
     # Build AppImage using appimagetool (official AppImage way)
     # ---------------------------------------------------------------------
+    if [ "${BUILD_APPIMAGE}" = true ]; then
     log_info "Building AppImage..."
     mkdir -p "${APPDIR}/usr"
     cp -a "${USR_NORMALIZED}/." "${APPDIR}/usr/"
@@ -552,10 +577,12 @@ EOF
     cd - >/dev/null
 
     log_success "AppImage built: ${DIST_DIR}/${PKG_NAME}_${VERSION}_${APPIMAGE_ARCH}.AppImage"
+    fi
     
     # ---------------------------------------------------------------------
-    # Build Tarball
+    # Build Tarball (covers Arch, Fedora, and other non-Debian distros)
     # ---------------------------------------------------------------------
+    if [ "${BUILD_TARBALL}" = true ]; then
     log_info "Building tarball..."
     rm -rf "${TARBALL_ROOT}"
     mkdir -p "${TARBALL_ROOT}/${APP_NAME}-${VERSION}-linux-${ARCH}"
@@ -800,7 +827,8 @@ EOF
     cd - >/dev/null
     
     log_success "Tarball built: ${DIST_DIR}/${PKG_NAME}_${VERSION}_${ARCH}.tar.gz"
-    
+    fi
+
     # Cleanup
     rm -rf "${WORK_DIR}" "${TARBALL_ROOT}" "${APP_NAME}.tar.xz"
     
@@ -809,9 +837,15 @@ EOF
     echo -e "${GREEN}  Build Complete!${NC}"
     echo -e "${GREEN}========================================${NC}"
     echo ""
-    echo -e "Debian:   ${BLUE}${DIST_DIR}/${PKG_NAME}_${VERSION}_${ARCH}.deb${NC}"
-    echo -e "AppImage: ${BLUE}${DIST_DIR}/${PKG_NAME}_${VERSION}_${APPIMAGE_ARCH}.AppImage${NC}"
-    echo -e "Tarball:  ${BLUE}${DIST_DIR}/${PKG_NAME}_${VERSION}_${ARCH}.tar.gz${NC}"
+    if [ "${BUILD_DEB}" = true ]; then
+        echo -e "Debian:   ${BLUE}${DIST_DIR}/${PKG_NAME}_${VERSION}_${ARCH}.deb${NC}"
+    fi
+    if [ "${BUILD_APPIMAGE}" = true ]; then
+        echo -e "AppImage: ${BLUE}${DIST_DIR}/${PKG_NAME}_${VERSION}_${APPIMAGE_ARCH}.AppImage${NC}"
+    fi
+    if [ "${BUILD_TARBALL}" = true ]; then
+        echo -e "Tarball:  ${BLUE}${DIST_DIR}/${PKG_NAME}_${VERSION}_${ARCH}.tar.gz${NC}"
+    fi
     echo ""
 
     # Remediate the live installed system icons (idempotent; auto-elevates via sudo).

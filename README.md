@@ -300,22 +300,35 @@ make build
 
 ### Using Build Script (Recommended for Linux)
 
-The build script follows Fyne's official Linux packaging flow:
+The build script follows official Linux packaging conventions:
+
+- **Debian**: `dpkg-buildpackage` using the existing `debian/` directory
+- **AppImage**: `appimagetool` on a proper AppDir
+- **Tarball**: relocatable package for Arch, Fedora, and other non-Debian distros
 
 ```bash
-# Build with default version
+# Build with default version (all package types: deb, appimage, tarball)
 ./build.sh
 
 # Build with explicit version
 ./build.sh 2.7.0
+
+# Build only the tarball (covers Arch, Fedora, and other distros)
+./build.sh 2.7.0 tarball
+# or
+FYCLIP_PACKAGE_TYPES=tarball ./build.sh
+
+# Build only the Debian package
+./build.sh 2.7.0 deb
+
+# Build only the AppImage
+./build.sh 2.7.0 appimage
 ```
 
 This produces:
-- `dist/fyclip_<version>_<arch>.deb` - Debian package
-- `dist/fyclip_<version>_<arch>.AppImage` - AppImage
-
-**Requirements:**
-- `go`
+- `dist/fyclip_<version>_<arch>.deb` - Debian package (Debian/Ubuntu)
+- `dist/fyclip_<version>_<arch>.AppImage` - AppImage (universal Linux)
+- `dist/fyclip_<version>_<arch>.tar.gz` - Tarball (Arch, Fedora, and other distros)
 - `fyne` CLI (`go install github.com/fyne-io/fyne@latest`)
 - `dpkg-deb`
 - `appimagetool`
