@@ -496,7 +496,9 @@ main() {
         exit 1
     fi
 
-    # dpkg-buildpackage places the .deb in the parent directory of the source tree
+    # dpkg-buildpackage places the .deb in the parent directory of the source tree.
+    # Debian revision adds "-1" to version (from debian/changelog), so match both
+    # "fyclip_2.7.0_amd64.deb" and "fyclip_2.7.0-1_amd64.deb".
     local deb_file="${PKG_NAME}_${VERSION}_${ARCH}.deb"
     local found_deb=""
     if [ -f "${deb_file}" ]; then
@@ -504,8 +506,8 @@ main() {
     elif [ -f "../${deb_file}" ]; then
         found_deb="../${deb_file}"
     else
-        # Fallback: search for the deb file in current and parent dir
-        found_deb=$(find . .. -maxdepth 1 -name "${PKG_NAME}_${VERSION}_${ARCH}.deb" 2>/dev/null | head -n 1)
+        # Fallback: glob-match any revision (e.g. 2.7.0-1_amd64.deb)
+        found_deb=$(find . .. -maxdepth 1 -name "${PKG_NAME}_${VERSION}-*_${ARCH}.deb" 2>/dev/null | head -n 1)
     fi
     if [ -n "${found_deb}" ]; then
         cp -f "${found_deb}" "${DIST_DIR}/${PKG_NAME}_${VERSION}_${ARCH}.deb"
