@@ -444,9 +444,7 @@ main() {
     # Build binary directly with Go (official approach, matches debian/rules)
     log_info "Building FyClip binary with Go..."
     local build_time="$(date -u +"%Y-%m-%d %H:%M:%S UTC")"
-    local build_ldflags="-s -w \
-        -X github.com/Sarwarhridoy4/FyClip---Advanced-Clipboard-Manager/internal/version.Version=${VERSION} \
-        -X github.com/Sarwarhridoy4/FyClip---Advanced-Clipboard-Manager/internal/version.BuildTime=${build_time}"
+    local build_ldflags="-s -w -X github.com/Sarwarhridoy4/FyClip---Advanced-Clipboard-Manager/internal/version.Version=${VERSION} -X github.com/Sarwarhridoy4/FyClip---Advanced-Clipboard-Manager/internal/version.BuildTime=${build_time}"
     go build -ldflags "${build_ldflags}" -o "${WORK_DIR}/bin/${BIN_NAME}" .
     chmod +x "${WORK_DIR}/bin/${BIN_NAME}"
     BIN_PATH="${WORK_DIR}/bin/${BIN_NAME}"
