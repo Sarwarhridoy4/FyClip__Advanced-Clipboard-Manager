@@ -24,7 +24,7 @@ import (
 )
 
 const (
-	appVersion   = "2.5.0"
+	appVersion   = "2.7.0"
 	appCopyright = "© 2024-2026"
 )
 

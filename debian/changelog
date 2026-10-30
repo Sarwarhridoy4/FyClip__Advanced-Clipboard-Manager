@@ -1,6 +1,6 @@
-fyclip (2.5.0-1) jammy; urgency=medium
+fyclip (2.7.0-1) jammy; urgency=medium
 
-  * Release FyClip 2.5.0 with quick-paste overlay and From/To date filtering.
+  * Release FyClip 2.7.0 with quick-paste overlay and From/To date filtering.
   * Harden update downloads, archive extraction, and SHA-256 verification.
   * Validate and bound clipboard history, images, snippets, and backup imports.
   * Preserve legacy encryption keys to prevent history loss during migration.

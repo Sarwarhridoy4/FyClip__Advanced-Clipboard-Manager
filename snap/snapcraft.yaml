@@ -1,6 +1,6 @@
 name: fyclip
 base: core24
-version: '2.5.0'
+version: '2.7.0'
 title: FyClip - Advanced Clipboard Manager
 summary: Advanced Clipboard Manager for Linux
 icon: snap/local/icon.png

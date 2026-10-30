@@ -244,7 +244,7 @@ func (mw *MainWindow) setupShortcuts() {
 	})
 
 	updateItem := fyne.NewMenuItem("Check for Updates", func() {
-		ShowUpdateDialog(mw.window, mw.app, "2.5.0")
+		ShowUpdateDialog(mw.window, mw.app, "2.7.0")
 	})
 
 	aboutItem := fyne.NewMenuItem("About", func() {

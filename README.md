@@ -16,7 +16,7 @@
 
 > A desktop clipboard manager for text, images, HTML, and files, built with Go and Fyne.
 
-**Current Version**: 2.5.0
+**Current Version**: 2.7.0
 
 ---
 
@@ -307,7 +307,7 @@ The build script follows Fyne's official Linux packaging flow:
 ./build.sh
 
 # Build with explicit version
-./build.sh 2.5.0
+./build.sh 2.7.0
 ```
 
 This produces:

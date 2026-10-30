@@ -295,7 +295,7 @@ get_version() {
     if [ -n "${tag}" ]; then
         printf '%s\n' "${tag#v}"
     else
-        printf '%s\n' "2.5.0"
+        printf '%s\n' "2.7.0"
     fi
 }
 

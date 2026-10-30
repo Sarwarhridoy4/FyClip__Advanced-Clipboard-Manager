@@ -33,7 +33,7 @@ jobs:
           VERSION="${VERSION#v}"
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
         else
-          echo "version=2.5.0" >> $GITHUB_OUTPUT
+          echo "version=2.7.0" >> $GITHUB_OUTPUT
         fi
         
     - name: Build Debian package
