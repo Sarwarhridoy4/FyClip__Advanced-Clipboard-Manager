@@ -216,7 +216,7 @@ install_system_dependencies() {
     
     case "${PM}" in
         apt-get)
-            packages=(build-essential curl wget tar dpkg libgl1 libglib2.0-0 libxcursor1 libxrandr2 libxinerama1 libxi6 libgtk-3-0 xclip xsel wl-clipboard)
+            packages=(build-essential curl wget tar dpkg debhelper libgl1 libglib2.0-0 libxcursor1 libxrandr2 libxinerama1 libxi6 libgtk-3-0 xclip xsel wl-clipboard)
             ;;
         dnf)
             packages=( @development-tools curl wget tar dpkg glibc libXcursor libXrandr libXinerama libXi gtk3 xclip xsel wl-clipboard)
@@ -261,11 +261,15 @@ ensure_tools() {
     fi
     log_success "Go: $(go version)"
     
-    # Check and install fyne
+    # Check and install fyne (optional; only needed for fyne package/releases, not core build)
     if ! command -v fyne >/dev/null 2>&1; then
-        install_fyne || { log_error "Failed to install fyne CLI"; exit 1; }
+        install_fyne || log_warn "fyne CLI not installed (optional; only needed for fyne package releases)"
     fi
-    log_success "fyne CLI installed"
+    if command -v fyne >/dev/null 2>&1; then
+        log_success "fyne CLI installed"
+    else
+        log_warn "fyne CLI not available - core build uses go build directly"
+    fi
     
     # Check for tar
     if ! command -v tar >/dev/null 2>&1; then
@@ -414,184 +418,122 @@ main() {
            "${DIST_DIR}/${PKG_NAME}_${VERSION}_${APPIMAGE_ARCH}.AppImage" \
            "${DIST_DIR}/${PKG_NAME}_${VERSION}_${ARCH}.tar.gz" \
            "${APP_NAME}.tar.xz"
-    
-    # Build with Fyne
-    log_info "Building FyClip with Fyne..."
-    fyne package --os linux --release --name "${APP_NAME}" --icon icon.png
-    
-    # Extract Fyne package
-    log_info "Extracting Fyne package..."
-    tar -xJf "${APP_NAME}.tar.xz" -C "${WORK_DIR}"
-    
-    # Detect prefix
-    if [ -d "${WORK_DIR}/usr/local" ]; then
-        PREFIX_REL="usr/local"
-    elif [ -d "${WORK_DIR}/usr" ]; then
-        PREFIX_REL="usr"
-    else
-        NESTED_USR=$(find "${WORK_DIR}" -maxdepth 3 -type d -name "usr" | head -n 1)
-        if [ -z "${NESTED_USR}" ]; then
-            log_error "No usr directory found after extraction"
-            exit 1
-        fi
-        NESTED_DIR=$(dirname "${NESTED_USR}")
-        PREFIX_REL="${NESTED_DIR#${WORK_DIR}/}/usr"
-        if [ -d "${WORK_DIR}/${PREFIX_REL}/local" ]; then
-            PREFIX_REL="${PREFIX_REL}/local"
-        fi
-    fi
-    
-    # Normalize directory structure
+
+    # Build binary directly with Go (official approach, matches debian/rules)
+    log_info "Building FyClip binary with Go..."
+    local build_time="$(date -u +"%Y-%m-%d %H:%M:%S UTC")"
+    local build_ldflags="-s -w \
+        -X github.com/Sarwarhridoy4/FyClip---Advanced-Clipboard-Manager/internal/version.Version=${VERSION} \
+        -X github.com/Sarwarhridoy4/FyClip---Advanced-Clipboard-Manager/internal/version.BuildTime=${build_time}"
+    go build -ldflags "${build_ldflags}" -o "${WORK_DIR}/bin/${BIN_NAME}" .
+    chmod +x "${WORK_DIR}/bin/${BIN_NAME}"
+    BIN_PATH="${WORK_DIR}/bin/${BIN_NAME}"
+    log_success "Binary built: ${BIN_PATH}"
+
+    # Set up normalized directory structure (matches Debian FHS layout)
     USR_NORMALIZED="${WORK_DIR}/usr-normalized"
     mkdir -p "${USR_NORMALIZED}"
-    cp -a "${WORK_DIR}/${PREFIX_REL}/." "${USR_NORMALIZED}/"
-    
     BIN_DIR="${USR_NORMALIZED}/bin"
     APPS_DIR="${USR_NORMALIZED}/share/applications"
     PIXMAPS_DIR="${USR_NORMALIZED}/share/pixmaps"
-    
-    # Normalize binary name
-    FOUND_BIN=$(find "${BIN_DIR}" -maxdepth 1 -type f -executable | head -n 1)
-    if [ -z "${FOUND_BIN}" ]; then
-        log_error "Binary not found"
-        exit 1
-    fi
-    if [ "$(basename "${FOUND_BIN}")" != "${BIN_NAME}" ]; then
-        mv "${FOUND_BIN}" "${BIN_DIR}/${BIN_NAME}"
-    fi
-    BIN_PATH="${BIN_DIR}/${BIN_NAME}"
-    
-    # Find desktop and icon files
-    DESKTOP_PATH=$(find "${APPS_DIR}" -name '*.desktop' | head -n 1)
-    ICON_PATH=$(find "${PIXMAPS_DIR}" -type f | head -n 1)
-    
-    if [ -z "${DESKTOP_PATH}" ]; then
-        log_error "Desktop file not found"
-        exit 1
-    fi
-    if [ -z "${ICON_PATH}" ]; then
-        log_error "Icon file not found"
-        exit 1
-    fi
-    
-    # Normalize desktop and icon filenames
-    DESKTOP_DIR="$(dirname "${DESKTOP_PATH}")"
-    DESKTOP_NORM="${DESKTOP_DIR}/${APP_ID}.desktop"
-    if [ "$(basename "${DESKTOP_PATH}")" != "${APP_ID}.desktop" ]; then
-        mv "${DESKTOP_PATH}" "${DESKTOP_NORM}"
-        DESKTOP_PATH="${DESKTOP_NORM}"
-    fi
-    
-    ICON_DIR="$(dirname "${ICON_PATH}")"
-    ICON_EXT="${ICON_PATH##*.}"
-    ICON_NORM="${ICON_DIR}/${APP_ID}.${ICON_EXT}"
-    if [ "$(basename "${ICON_PATH}")" != "${APP_ID}.${ICON_EXT}" ]; then
-        mv "${ICON_PATH}" "${ICON_NORM}"
-        ICON_PATH="${ICON_NORM}"
-    fi
-    
-    # Update desktop file
+    HICOLOR_DIR="${USR_NORMALIZED}/share/icons/hicolor"
+    mkdir -p "${BIN_DIR}" "${APPS_DIR}" "${PIXMAPS_DIR}"
+
+    # Install binary
+    cp -f "${BIN_PATH}" "${BIN_DIR}/${BIN_NAME}"
+    chmod +x "${BIN_DIR}/${BIN_NAME}"
+
+    # Install desktop file from debian/ (the official source)
+    DESKTOP_PATH="${APPS_DIR}/${APP_ID}.desktop"
+    cp -f "debian/fyclip.desktop" "${DESKTOP_PATH}"
     sed -i -E "s|^Exec=.*|Exec=${BIN_NAME}|" "${DESKTOP_PATH}"
     sed -i -E "s|^Icon=.*|Icon=${APP_ID}|" "${DESKTOP_PATH}"
-    sed -i -E "s|^Name=.*|Name=${APP_NAME}|" "${DESKTOP_PATH}"
-    grep -q '^StartupWMClass=' "${DESKTOP_PATH}" || echo "StartupWMClass=FyClip - Clipboard Manager" >> "${DESKTOP_PATH}"
-    
-    grep -q '^Categories=' "${DESKTOP_PATH}" || echo "Categories=Utility;" >> "${DESKTOP_PATH}"
-    grep -q '^NoDisplay=' "${DESKTOP_PATH}" || echo "NoDisplay=false" >> "${DESKTOP_PATH}"
-    grep -q '^Keywords=' "${DESKTOP_PATH}" || echo "Keywords=clipboard;copy;paste;history;" >> "${DESKTOP_PATH}"
-    
-    # Install icon in hicolor at all standard sizes (properly resized so each
-    # file matches its directory name: fixes blurry/scaled icon issues).
-    HICOLOR_DIR="${USR_NORMALIZED}/share/icons/hicolor"
-    generate_hicolor_icons "${ICON_PATH}" "${HICOLOR_DIR}"
+
+    # Install icon at all standard hicolor sizes (properly resized)
+    generate_hicolor_icons "icon.png" "${HICOLOR_DIR}"
     ICON_PATH="${HICOLOR_DIR}/256x256/apps/${APP_ID}.png"
     
     # ---------------------------------------------------------------------
-    # Build Debian Package
+    # Build Debian Package using dpkg-buildpackage (official Debian way)
+    # Uses the existing debian/ directory (control, rules, postinst, postrm, changelog, etc.)
     # ---------------------------------------------------------------------
     log_info "Building Debian package..."
-    mkdir -p "${DEB_ROOT}/DEBIAN" "${DEB_ROOT}/usr"
-    cp -a "${USR_NORMALIZED}/." "${DEB_ROOT}/usr/"
-    
-    cat > "${DEB_ROOT}/DEBIAN/control" <<EOF
-Package: ${PKG_NAME}
-Version: ${VERSION}
-Section: utils
-Priority: optional
-Architecture: ${ARCH}
-Maintainer: ${AUTHOR} <${EMAIL}>
-Depends: libgl1, libx11-6, libxcursor1, libxrandr2, libxinerama1, libxi6, libgtk-3-0, xclip | xsel | wl-clipboard
-Description: A modular, high-performance clipboard manager
- FyClip is a powerful, feature-rich clipboard manager built with Go and Fyne.
- .
- Key features:
-  * Clipboard History: Automatically saves text, images, HTML, and files
-  * Pin Items: Keep important items at the top
-  * Enhanced Search: Regex, case-sensitive, and fuzzy matching
-  * Image Support: Preview and save clipboard images
-  * Encrypted Storage: AES-256-GCM encryption at rest
-  * Snippets: Save and expand text templates
-  * AutoStart: Launch on system startup
-  * Theme Support: Light, Dark, and System theme modes
-  * Auto Update: Check for and install updates from GitHub
-EOF
-    
-    cat > "${DEB_ROOT}/DEBIAN/postinst" <<'EOF'
-#!/bin/sh
-set -e
-update-desktop-database -q /usr/share/applications || true
-gtk-update-icon-cache -q /usr/share/icons/hicolor || true
-EOF
-    chmod 755 "${DEB_ROOT}/DEBIAN/postinst"
 
-    cat > "${DEB_ROOT}/DEBIAN/postrm" <<'EOF'
-#!/bin/sh
-set -e
-update-desktop-database -q /usr/share/applications || true
-gtk-update-icon-cache -q /usr/share/icons/hicolor || true
-EOF
-    chmod 755 "${DEB_ROOT}/DEBIAN/postrm"
-    
-    # Remove existing package file if present
-    rm -f "${DIST_DIR}/${PKG_NAME}_${VERSION}_${ARCH}.deb"
-    
-    # Build the package
-    dpkg-deb --build "${DEB_ROOT}" "${DIST_DIR}/${PKG_NAME}_${VERSION}_${ARCH}.deb"
-    log_success "Debian package built: ${DIST_DIR}/${PKG_NAME}_${VERSION}_${ARCH}.deb"
+    # Ensure debian/rules is executable (required by dpkg-buildpackage)
+    chmod +x debian/rules
+
+    # Ensure debhelper is available for debhelper-compat 13
+    if ! command -v dpkg-buildpackage >/dev/null 2>&1; then
+        install_packages dpkg-dev debhelper || { log_error "dpkg-dev/debhelper required for Debian packaging"; exit 1; }
+    fi
+
+    # Build with dpkg-buildpackage (official Debian way)
+    # -b: binary-only package, -uc: don't sign .changes, -us: don't sign .dsc
+    log_info "Running dpkg-buildpackage -b -uc -us..."
+    if ! dpkg-buildpackage -b -uc -us -rfakeroot; then
+        log_error "dpkg-buildpackage failed"
+        exit 1
+    fi
+
+    # dpkg-buildpackage places the .deb in the parent directory of the source tree
+    local deb_file="${PKG_NAME}_${VERSION}_${ARCH}.deb"
+    local found_deb=""
+    if [ -f "${deb_file}" ]; then
+        found_deb="${deb_file}"
+    elif [ -f "../${deb_file}" ]; then
+        found_deb="../${deb_file}"
+    else
+        # Fallback: search for the deb file in current and parent dir
+        found_deb=$(find . .. -maxdepth 1 -name "${PKG_NAME}_${VERSION}_${ARCH}.deb" 2>/dev/null | head -n 1)
+    fi
+    if [ -n "${found_deb}" ]; then
+        cp -f "${found_deb}" "${DIST_DIR}/${PKG_NAME}_${VERSION}_${ARCH}.deb"
+        log_success "Debian package built: ${DIST_DIR}/${PKG_NAME}_${VERSION}_${ARCH}.deb"
+    else
+        log_error "Debian package not found after dpkg-buildpackage"
+        exit 1
+    fi
     
     # ---------------------------------------------------------------------
-    # Build AppImage
+    # Build AppImage using appimagetool (official AppImage way)
     # ---------------------------------------------------------------------
     log_info "Building AppImage..."
     mkdir -p "${APPDIR}/usr"
     cp -a "${USR_NORMALIZED}/." "${APPDIR}/usr/"
-    
-    # Create AppRun
-    cat > "${APPDIR}/AppRun" <<EOF
+
+    # Create AppRun (AppImage entry point)
+    cat > "${APPDIR}/AppRun" <<'EOF'
 #!/bin/sh
-HERE="\$(dirname "\$(readlink -f "\$0")")"
-export LD_LIBRARY_PATH="\$HERE/usr/lib:\$LD_LIBRARY_PATH"
-exec "\$HERE/usr/bin/${BIN_NAME}" "\$@"
+HERE="$(dirname "$(readlink -f "$0")")"
+export LD_LIBRARY_PATH="$HERE/usr/lib:${LD_LIBRARY_PATH}"
+exec "$HERE/usr/bin/fyclip" "$@"
 EOF
     chmod +x "${APPDIR}/AppRun"
-    
-    # Copy desktop and icon
+
+    # Copy desktop file and icon to AppImage root
     cp "${DESKTOP_PATH}" "${APPDIR}/${APP_ID}.desktop"
-    cp "${ICON_PATH}" "${APPDIR}/${APP_ID}.${ICON_EXT}"
-    
-    # Create symlink
-    ln -sf "${APP_ID}.${ICON_EXT}" "${APPDIR}/.DirIcon"
-    
-    # Update desktop file for AppImage
+    cp "${ICON_PATH}" "${APPDIR}/${APP_ID}.png"
+    ln -sf "${APP_ID}.png" "${APPDIR}/.DirIcon"
+
+    # Update desktop file for AppImage execution context
     sed -i -E "s|^Exec=.*|Exec=AppRun|" "${APPDIR}/${APP_ID}.desktop"
     sed -i -E "s|^Icon=.*|Icon=${APP_ID}|" "${APPDIR}/${APP_ID}.desktop"
-    
-    # Bundle dependencies
+
+    # Bundle runtime dependencies (exclude core system libs provided by the host)
     mkdir -p "${APPDIR}/usr/lib"
     ldd "${BIN_PATH}" 2>/dev/null | awk '/=> \// {print $3}' | \
-        grep -vE 'lib(c|pthread|rt|dl|m|gcc_s|stdc\+\+|glib|X11|xcb|wayland)' | \
-        xargs -r -I '{}' cp '{}' "${APPDIR}/usr/lib/" 2>/dev/null || true
-    
+        while read -r lib; do
+            case "${lib}" in
+                */libc.so*|*/libpthread.so*|*/librt.so*|*/libdl.so*|*/libm.so*|*/libgcc_s.so*|*/libstdc++.so*|*/libglib*.so*|*/libX11*.so*|*/libxcb*.so*|*/libwayland*.so*)
+                    ;;
+                *)
+                    if [ -f "${lib}" ]; then
+                        cp -f "${lib}" "${APPDIR}/usr/lib/" 2>/dev/null || true
+                    fi
+                    ;;
+            esac
+        done || true
+
     # Build AppImage
     APPIMAGE_TOOL="$(command -v appimagetool 2>/dev/null || true)"
     if [ -z "${APPIMAGE_TOOL}" ] && [ -x "${LOCAL_TOOLS_DIR}/bin/appimagetool" ]; then
@@ -601,14 +543,14 @@ EOF
         log_error "appimagetool not found"
         exit 1
     fi
-    # Use absolute path since we cd to DIST_DIR
-    APPDIR_ABS="$(pwd)/${WORK_DIR}"
+
+    log_info "Running appimagetool on ${APPDIR}..."
     cd "${DIST_DIR}"
-    APPIMAGE_EXTRACT_AND_RUN=1 "${APPIMAGE_TOOL}" \
-        "${APPDIR_ABS}/FyClip.AppDir" \
+    "${APPIMAGE_TOOL}" \
+        "${WORK_DIR}/FyClip.AppDir" \
         "${PKG_NAME}_${VERSION}_${APPIMAGE_ARCH}.AppImage"
     cd - >/dev/null
-    
+
     log_success "AppImage built: ${DIST_DIR}/${PKG_NAME}_${VERSION}_${APPIMAGE_ARCH}.AppImage"
     
     # ---------------------------------------------------------------------
