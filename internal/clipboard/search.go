@@ -2,12 +2,10 @@
 package clipboard
 
 import (
-	"context"
 	"fmt"
 	"regexp"
 	"strings"
 	"sync"
-	"time"
 )
 
 // SearchOptions contains search configuration
@@ -18,8 +16,7 @@ type SearchOptions struct {
 }
 
 const (
-	regexMatchTimeout = 100 * time.Millisecond
-	regexMaxInputLen  = 10000
+	regexMaxInputLen = 10000
 )
 
 // DefaultSearchOptions returns default search options
@@ -90,12 +87,22 @@ func SearchItem(item *Item, query string, opts *SearchOptions) bool {
 }
 
 // searchWithSubstring performs a basic substring search
+// Case-insensitive mode avoids allocating a lowercased copy of content
+// by scanning with strings.EqualFold instead.
 func searchWithSubstring(content, query string, caseSensitive bool) bool {
-	if !caseSensitive {
-		content = strings.ToLower(content)
-		query = strings.ToLower(query)
+	if caseSensitive {
+		return strings.Contains(content, query)
 	}
-	return strings.Contains(content, query)
+	if len(query) == 0 {
+		return true
+	}
+	qLower := strings.ToLower(query)
+	for i := 0; i+len(qLower) <= len(content); i++ {
+		if strings.EqualFold(content[i:i+len(qLower)], qLower) {
+			return true
+		}
+	}
+	return false
 }
 
 // searchWithRegex performs regex-based search
@@ -129,23 +136,7 @@ func searchWithRegex(content, pattern string) bool {
 		content = content[:regexMaxInputLen]
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), regexMatchTimeout)
-	defer cancel()
-
-	type result struct {
-		matched bool
-	}
-	done := make(chan result, 1)
-	go func() {
-		done <- result{matched: re.MatchString(content)}
-	}()
-
-	select {
-	case res := <-done:
-		return res.matched
-	case <-ctx.Done():
-		return false
-	}
+	return re.MatchString(content)
 }
 
 var nestedQuantifierRegex = regexp.MustCompile(`\([^)]*[+*][^)]*\)[+*]`)

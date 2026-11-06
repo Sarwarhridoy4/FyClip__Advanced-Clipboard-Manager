@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"iter"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -454,12 +455,6 @@ func (m *Manager) updateFiltered() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if cap(m.filtered) < len(m.history) {
-		m.filtered = make([]*Item, 0, len(m.history))
-	} else {
-		m.filtered = m.filtered[:0]
-	}
-
 	query := m.searchQuery
 	searchOpts := m.searchOptions
 	sortByDate := m.sortByDate
@@ -503,7 +498,12 @@ func (m *Manager) updateFiltered() {
 		})
 	}
 
-	m.filtered = m.filtered[:0]
+	// Reuse filtered slice capacity
+	if cap(m.filtered) < len(m.history) {
+		m.filtered = make([]*Item, 0, len(m.history))
+	} else {
+		m.filtered = m.filtered[:0]
+	}
 	for i := range m.history {
 		item := &m.history[i]
 		if !item.Pinned {
@@ -898,6 +898,13 @@ func (m *Manager) FilteredSeq(yield func(Item) bool) {
 			return
 		}
 	}
+}
+
+// Iter returns an iter.Seq[Item] over filtered items for zero-copy,
+// range-over-func style iteration (Go 1.23+). Equivalent to FilteredSeq
+// but usable with `for item := range m.Iter() { ... }`.
+func (m *Manager) Iter() iter.Seq[Item] {
+	return m.FilteredSeq
 }
 
 // GetFilteredCount returns the count of filtered items

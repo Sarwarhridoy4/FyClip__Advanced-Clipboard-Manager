@@ -87,7 +87,7 @@ func SafeString(data []byte) string {
 	if len(data) == 0 {
 		return ""
 	}
-	if !utf8.ValidString(string(data)) {
+	if !utf8.Valid(data) {
 		return ""
 	}
 	return string(data)

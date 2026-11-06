@@ -99,9 +99,39 @@ go test -cpuprofile cpu.prof -memprofile mem.prof -bench . ./internal/clipboard
 go tool pprof cpu.prof
 ```
 
-### iter.Seq (not implemented — Go version constraint)
+---
 
-`iter.Seq` requires Go 1.23+. `GetFiltered` returns `[]Item` for backward compatibility with existing callers. `FilteredSeq` (implemented above) provides the zero-copy iteration alternative without requiring `iter`.
+## Additional Implemented Changes (Go 1.26.1)
+
+### 8. iter.Seq support ✅
+
+**File:** `internal/clipboard/manager.go` (`Iter`)
+
+Added `Iter() iter.Seq[Item]` alongside `FilteredSeq`. Uses Go 1.23+ `iter` package (now available with Go 1.26.1) for zero-copy, range-over-func style iteration: `for item := range m.Iter() { ... }`. Delegates to `FilteredSeq` to avoid code duplication.
+
+### 9. Regex search: goroutine removal ✅
+
+**File:** `internal/clipboard/search.go` (`searchWithRegex`)
+
+Removed the per-match goroutine+channel+`context.WithTimeout` allocation. Since input is capped at 10,000 chars and patterns are validated for nested quantifiers, `re.MatchString(content)` is called directly. Eliminates one context, one channel, one goroutine, and one select per regex match.
+
+### 10. Case-insensitive substring search without allocation ✅
+
+**File:** `internal/clipboard/search.go` (`searchWithSubstring`)
+
+Case-insensitive mode no longer calls `strings.ToLower(content)` (which allocated a full copy of the search content). Instead lowercases the small query once and scans content with `strings.EqualFold` per position.
+
+### 11. updateFiltered — single slice reset ✅
+
+**File:** `internal/clipboard/manager.go` (`updateFiltered`)
+
+Removed the duplicate `m.filtered = m.filtered[:0]` reset. The slice capacity is now ensured once before appending pinned + unpinned items.
+
+### 12. SafeString — avoid double string conversion ✅
+
+**File:** `internal/clipboard/validation.go` (`SafeString`)
+
+Uses `utf8.Valid(data)` instead of `utf8.ValidString(string(data))`, avoiding a `[]byte`→`string` conversion solely for UTF-8 validation.
 
 ---
 
@@ -115,11 +145,17 @@ go tool pprof cpu.prof
 6. ✅ Regex cache LRU — stable search latency
 7. ✅ memoryPressureCheck interval — lower background CPU overhead
 8. ✅ FilteredSeq — zero-copy filtered iteration
+9. ✅ `Iter() iter.Seq[Item]` — idiomatic Go 1.23+ zero-copy iteration
+10. ✅ Regex search goroutine removal — lower per-match allocation
+11. ✅ Case-insensitive substring without `strings.ToLower(content)` — lower alloc in search
+12. ✅ `updateFiltered` single slice reset — minor alloc reduction
+13. ✅ `SafeString` `utf8.Valid(data)` — avoids `[]byte`→`string` conversion
 
 ---
 
 ## Files Modified
 
-- `internal/clipboard/manager.go` — `AddItem` (dirty flag), `trimHistory` (sort.Slice), `updateFiltered` (sort.Slice), `removeAtIndex` (dirty flag), `ClearUnpinned` (dirty flag), `saveHistoryNow` (dirty skip), `CheckMemoryPressure` (intervals), `FilteredSeq` (new)
+- `internal/clipboard/manager.go` — `AddItem` (dirty flag), `trimHistory` (sort.Slice), `updateFiltered` (sort.Slice + single reset), `removeAtIndex` (dirty flag), `ClearUnpinned` (dirty flag), `saveHistoryNow` (dirty skip), `CheckMemoryPressure` (intervals), `FilteredSeq` (new), `Iter` (new)
 - `internal/clipboard/storage.go` — `compress` (gzip pool), `decompress` (gzip pool), pool declarations
-- `internal/clipboard/search.go` — regex cache LRU with `regexOrder`
+- `internal/clipboard/search.go` — regex cache LRU with `regexOrder`, `searchWithRegex` (goroutine removal), `searchWithSubstring` (allocation-free case-insensitive)
+- `internal/clipboard/validation.go` — `SafeString` (`utf8.Valid(data)`)
